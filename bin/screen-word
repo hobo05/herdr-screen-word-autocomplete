@@ -1,0 +1,184 @@
+#!/usr/bin/env bash
+# screen-word: pick a word from a herdr pane's recent output with fzf and insert it.
+# Kept to bash 3.2 and BSD/GNU-common tools so it runs unchanged on macOS and Linux.
+set -euo pipefail
+
+VERSION="0.1.0"
+DEFAULT_LINES=300
+DEFAULT_KEY="alt+;"
+
+usage() {
+  cat <<'EOF'
+Usage: screen-word <command> [options]
+
+Commands:
+  popup                 Pick a word from the pane under a herdr popup and type it into that pane.
+                        Run it from a herdr [[keys.command]] popup binding (see `setup herdr`).
+  pick [--pane ID]      Pick a word with fzf and print it.
+  words [--pane ID]     Print the candidate words, newest first.
+  words --stdin         Read the text from stdin instead of a pane.
+  setup herdr [--key K] Add a popup keybinding (default alt+;) to herdr's config.toml and reload it.
+  init zsh              Print a zsh widget that inserts a picked word at the cursor.
+
+Options:
+  --lines N             How many recent lines to read (default 300).
+  -h, --help            Show this help.
+  -V, --version         Show the version.
+
+The pane defaults to $HERDR_ACTIVE_PANE_ID, then $HERDR_PANE_ID.
+EOF
+}
+
+die() {
+  echo "screen-word: $*" >&2
+  exit 1
+}
+
+script_dir() {
+  local src="${BASH_SOURCE[0]}" dir
+  while [ -L "$src" ]; do
+    dir="$(cd -P "$(dirname "$src")" && pwd)"
+    src="$(readlink "$src")"
+    case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+  done
+  cd -P "$(dirname "$src")" && pwd
+}
+
+resolve_pane() {
+  local pane="${1:-${HERDR_ACTIVE_PANE_ID:-${HERDR_PANE_ID:-}}}"
+  [ -n "$pane" ] || die "no herdr pane: run inside herdr or pass --pane ID"
+  printf '%s\n' "$pane"
+}
+
+read_pane() {
+  command -v herdr >/dev/null 2>&1 || die "herdr is not on PATH"
+  herdr pane read "$1" --source recent-unwrapped --lines "$2"
+}
+
+# Splits text into words, trims surrounding quotes, brackets and trailing punctuation,
+# and prints each word of 3+ characters once, newest first.
+extract_words() {
+  awk '
+    BEGIN { lead = "\"'\''`([{<"; trail = "\"'\''`)]}>,;:.!?" }
+    { lines[NR] = $0 }
+    END {
+      for (i = NR; i > 0; i--) {
+        n = split(lines[i], parts, /[ \t\r]+/)
+        for (j = n; j > 0; j--) {
+          w = parts[j]
+          while (w != "" && index(lead, substr(w, 1, 1))) w = substr(w, 2)
+          while (w != "" && index(trail, substr(w, length(w), 1))) w = substr(w, 1, length(w) - 1)
+          if (length(w) > 2 && !(w in seen)) { seen[w] = 1; print w }
+        }
+      }
+    }'
+}
+
+choose() {
+  command -v fzf >/dev/null 2>&1 || die "fzf is not on PATH"
+  fzf --prompt 'screen> ' "$@"
+}
+
+parse_common() {
+  PANE=""
+  LINES_TO_READ="$DEFAULT_LINES"
+  STDIN=0
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --pane) [ $# -ge 2 ] || die "--pane needs a value"; PANE="$2"; shift 2 ;;
+      --lines) [ $# -ge 2 ] || die "--lines needs a value"; LINES_TO_READ="$2"; shift 2 ;;
+      --stdin) STDIN=1; shift ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  case "$LINES_TO_READ" in '' | *[!0-9]*) die "--lines must be a number" ;; esac
+}
+
+source_text() {
+  if [ "$STDIN" = 1 ]; then
+    cat
+  else
+    read_pane "$(resolve_pane "$PANE")" "$LINES_TO_READ"
+  fi
+}
+
+cmd_words() {
+  parse_common "$@"
+  source_text | extract_words
+}
+
+cmd_pick() {
+  parse_common "$@"
+  source_text | extract_words | choose --height 40%
+}
+
+cmd_popup() {
+  parse_common "$@"
+  local pane word
+  pane="$(resolve_pane "${PANE:-${HERDR_ACTIVE_PANE_ID:-}}")"
+  word="$(read_pane "$pane" "$LINES_TO_READ" | extract_words | choose)" || exit 0
+  [ -n "$word" ] && herdr pane send-text "$pane" "$word" >/dev/null
+}
+
+herdr_config_path() {
+  printf '%s\n' "${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}"
+}
+
+cmd_setup() {
+  [ "${1:-}" = "herdr" ] || die "usage: screen-word setup herdr [--key KEY]"
+  shift
+  local key="$DEFAULT_KEY" config self
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --key) [ $# -ge 2 ] || die "--key needs a value"; key="$2"; shift 2 ;;
+      *) die "unknown option: $1" ;;
+    esac
+  done
+  config="$(herdr_config_path)"
+  self="$(script_dir)/screen-word"
+  if [ -f "$config" ] && grep -q 'screen-word' "$config"; then
+    echo "screen-word is already bound in $config; edit that block to change it."
+    return 0
+  fi
+  mkdir -p "$(dirname "$config")"
+  cat >>"$config" <<EOF
+
+[[keys.command]]
+key = "$key"
+type = "popup"
+command = "$self popup"
+description = "insert a word from this pane's output"
+width = "60%"
+height = "50%"
+EOF
+  echo "Added $key to $config"
+  if command -v herdr >/dev/null 2>&1 && herdr config check >/dev/null 2>&1; then
+    herdr server reload-config >/dev/null 2>&1 && echo "Reloaded the running herdr server." || true
+  fi
+}
+
+cmd_init() {
+  [ "${1:-}" = "zsh" ] || die "usage: screen-word init zsh"
+  local file
+  file="$(script_dir)/../share/screen-word/screen-word.zsh"
+  [ -f "$file" ] || die "missing $file"
+  cat "$file"
+}
+
+main() {
+  [ $# -gt 0 ] || { usage; exit 1; }
+  local cmd="$1"
+  shift
+  case "$cmd" in
+    words) cmd_words "$@" ;;
+    pick) cmd_pick "$@" ;;
+    popup) cmd_popup "$@" ;;
+    setup) cmd_setup "$@" ;;
+    init) cmd_init "$@" ;;
+    -h | --help | help) usage ;;
+    -V | --version) echo "screen-word $VERSION" ;;
+    *) usage >&2; exit 1 ;;
+  esac
+}
+
+main "$@"
