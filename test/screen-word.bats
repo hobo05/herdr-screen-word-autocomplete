@@ -21,6 +21,11 @@ EOF
   PATH="$FAKE_BIN:$PATH"
 }
 
+fake_uname() {
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s"\n' "$1" >"$FAKE_BIN/uname"
+  chmod +x "$FAKE_BIN/uname"
+}
+
 @test "words lists newest first, once each, skipping short words" {
   run "$SW" words --stdin <<<$'alpha beta ab\ngamma alpha'
   [ "$status" -eq 0 ]
@@ -92,11 +97,27 @@ EOF
   [ "$(grep -c 'keys.command' "$HERDR_CONFIG_PATH")" -eq 1 ]
 }
 
+@test "setup defaults to cmd+; on macOS" {
+  fake_herdr
+  fake_uname Darwin
+  run "$SW" setup
+  [ "$status" -eq 0 ]
+  grep -q 'key = "cmd+;"' "$HERDR_CONFIG_PATH"
+}
+
+@test "setup defaults to alt+; elsewhere" {
+  fake_herdr
+  fake_uname Linux
+  run "$SW" setup
+  [ "$status" -eq 0 ]
+  grep -q 'key = "alt+;"' "$HERDR_CONFIG_PATH"
+}
+
 @test "setup still accepts the herdr target from earlier versions" {
   fake_herdr
   run "$SW" setup herdr
   [ "$status" -eq 0 ]
-  grep -q 'key = "alt+;"' "$HERDR_CONFIG_PATH"
+  grep -q 'keys.command' "$HERDR_CONFIG_PATH"
 }
 
 @test "setup rejects a target other than herdr" {

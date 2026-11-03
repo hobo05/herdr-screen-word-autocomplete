@@ -16,13 +16,14 @@ class ScreenWordAutocomplete < Formula
     <<~EOS
       screen-word reads panes through herdr (https://herdr.dev), which must be on your PATH.
 
-      Bind Alt+; in herdr:
+      Bind it in herdr (Cmd+; on macOS, Alt+; on Linux):
         screen-word setup
 
       Before brew uninstall, remove that binding:
         screen-word uninstall
 
-      On macOS, make your terminal send Option as Alt (Ghostty: macos-option-as-alt = true).
+      On macOS, Cmd+; needs no terminal setup. If you bind Alt+; instead, make your
+      terminal send Option as Alt (Ghostty: macos-option-as-alt = true).
     EOS
   end
 

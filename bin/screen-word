@@ -3,15 +3,15 @@
 # Kept to bash 3.2 and BSD/GNU-common tools so it runs unchanged on macOS and Linux.
 set -euo pipefail
 
-VERSION="0.5.0"
-DEFAULT_KEY="alt+;"
+VERSION="0.6.0"
 
 usage() {
   cat <<'EOF'
 Usage: screen-word <command> [options]
 
 Commands:
-  setup [--key K]       Add a popup keybinding (default alt+;) to herdr's config.toml and reload it.
+  setup [--key K]       Add a popup keybinding (default cmd+; on macOS, alt+; elsewhere)
+                        to herdr's config.toml and reload it.
   uninstall             Remove that keybinding. Run it before brew uninstall.
   popup                 Pick a word from the pane under a herdr popup and type it into that pane.
                         The keybinding runs this.
@@ -32,6 +32,16 @@ EOF
 die() {
   echo "screen-word: $*" >&2
   exit 1
+}
+
+# macOS keyboards have Option, not Alt, and terminals compose Option+; into "…" unless
+# configured to send Alt. Cmd+; is unbound in Ghostty, iTerm2 and Terminal.app, so it is
+# the default there. Elsewhere there is no Cmd, and Alt+; reaches herdr as ESC+;.
+default_key() {
+  case "$(uname -s 2>/dev/null)" in
+    Darwin) printf '%s\n' 'cmd+;' ;;
+    *) printf '%s\n' 'alt+;' ;;
+  esac
 }
 
 resolve_pane() {
@@ -126,7 +136,8 @@ reload_herdr() {
 }
 
 cmd_setup() {
-  local key="$DEFAULT_KEY" config self
+  local key config self
+  key="$(default_key)"
   [ "${1:-}" != "herdr" ] || shift
   while [ $# -gt 0 ]; do
     case "$1" in

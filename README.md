@@ -1,11 +1,11 @@
 # herdr-screen-word-autocomplete
 
-Press **Alt+;** in a [herdr](https://herdr.dev) pane, fuzzy-pick any word visible in that pane, and have it typed at your cursor. It works at a shell prompt and inside full-screen programs such as Claude Code, vim or less.
+Press **Cmd+;** on macOS (**Alt+;** on Linux) in a [herdr](https://herdr.dev) pane, fuzzy-pick any word visible in that pane, and have it typed at your cursor. It works at a shell prompt and inside full-screen programs such as Claude Code, vim or less.
 
 ```
 $ git status
         modified:   src/main/java/com/example/PaymentRouter.java
-$ git diff ▮          ← Alt+; → type "Rout" → Enter
+$ git diff ▮          ← Cmd+; (Alt+; on Linux) → type "Rout" → Enter
 $ git diff src/main/java/com/example/PaymentRouter.java
 ```
 
@@ -26,9 +26,11 @@ This installs the `screen-word` command and pulls in `fzf`. You also need herdr 
 ## Set up
 
 ```sh
-screen-word setup                  # binds alt+;
+screen-word setup                  # binds cmd+; on macOS, alt+; on Linux
 screen-word setup --key alt+o
 ```
+
+`setup` picks the chord the OS can deliver by default: Cmd+; on macOS, where Option would compose `…` unless every terminal is configured to send Alt, and Alt+; on Linux, which has no Cmd key. Pass `--key` to choose another chord.
 
 This adds a popup binding to `~/.config/herdr/config.toml` (or `$HERDR_CONFIG_PATH`) and reloads the running herdr server. When you press the key, herdr opens a popup with fzf over the words of the pane underneath. Pick one and it is typed into that pane. Running setup again leaves an existing binding alone.
 
@@ -47,9 +49,11 @@ This removes the binding, reloads herdr, and leaves the rest of the config as it
 
 ### macOS
 
-Your terminal must send Option as Alt, or Option+; types a character instead:
+The default Cmd+; needs no terminal setup.
 
-- Ghostty: `macos-option-as-alt = true`
+Only if you bind Alt+; with `screen-word setup --key alt+;` must your terminal send Option as Alt, or Option+; types `…` instead:
+
+- Ghostty: `macos-option-as-alt = true` (already the default on U.S. Standard and U.S. International layouts)
 - iTerm2: Profiles → Keys → Left Option key → Esc+
 - Terminal.app: Profiles → Keyboard → Use Option as Meta key
 
@@ -57,7 +61,7 @@ Your terminal must send Option as Alt, or Option+; types a character instead:
 
 | Command | What it does |
 |---|---|
-| `screen-word setup [--key K]` | Add the popup binding to herdr's config. |
+| `screen-word setup [--key K]` | Add the popup binding to herdr's config: Cmd+; on macOS, Alt+; elsewhere. |
 | `screen-word uninstall` | Remove the popup binding. |
 | `screen-word popup` | Pick from the pane under a herdr popup and type the word into it. Used by the binding. |
 | `screen-word pick [--pane ID]` | Pick a word with fzf and print it. |
