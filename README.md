@@ -15,8 +15,11 @@ Works on macOS and Linux.
 
 ```sh
 brew tap hobo05/screen-word https://github.com/hobo05/screen-word-autocomplete
+brew trust --formula hobo05/screen-word/screen-word-autocomplete
 brew install screen-word-autocomplete
 ```
+
+Homebrew refuses formulae from third-party taps until you trust them, hence the `brew trust` step.
 
 This installs the `screen-word` command and pulls in `fzf`. You also need herdr on your `PATH`.
 
