@@ -25,6 +25,20 @@ This installs the `screen-word` command and pulls in `fzf`. You also need herdr 
 
 ## Set up
 
+```sh
+screen-word setup
+```
+
+```
+Set up screen-word for:
+  1) herdr  popup on alt+; that works in any herdr pane, including Claude Code and vim
+  2) zsh    widget on alt+; at the zsh prompt
+  3) both   herdr on alt+; and zsh on alt+'
+Choose [1-3]:
+```
+
+Or skip the menu with `screen-word setup herdr`, `screen-word setup zsh` or `screen-word setup both`. Running a setup again leaves an existing binding alone.
+
 ### herdr binding (recommended)
 
 ```sh
@@ -34,14 +48,23 @@ screen-word setup herdr --key alt+o
 
 This adds a popup binding to `~/.config/herdr/config.toml` (or `$HERDR_CONFIG_PATH`) and reloads the running herdr server. When you press the key, herdr opens a popup with fzf over the words of the pane underneath. Pick one and it is typed into that pane.
 
-### zsh widget (optional)
+### zsh widget
 
 ```sh
-# ~/.zshrc
-eval "$(screen-word init zsh)"
+screen-word setup zsh              # binds alt+;
+screen-word setup zsh --key alt+o
 ```
 
-This binds Alt+; at the zsh prompt and opens fzf inline instead of in a popup. Set `SCREEN_WORD_KEY` before the `eval` to use another key, for example `SCREEN_WORD_KEY='^[o'`. If the herdr binding uses the same key, herdr takes it first, so you only need one of the two.
+This adds a block to `~/.zshrc` (or `$ZDOTDIR/.zshrc`) that loads the widget, so the key opens fzf inline at the zsh prompt instead of in a popup. Open a new shell to use it. `--key` takes `alt+<char>`, `ctrl+<char>`, or a bindkey string such as `^[o`.
+
+The widget still reads the herdr pane, so it only finds words inside herdr. It works only at the zsh prompt, not inside programs such as Claude Code or vim. herdr sees keys before zsh, which is why `both` puts zsh on alt+' rather than alt+;.
+
+To load it by hand instead, add this to `.zshrc`:
+
+```sh
+SCREEN_WORD_KEY='^[;'   # optional, this is the default
+eval "$(screen-word init zsh)"
+```
 
 ### macOS
 
@@ -59,7 +82,10 @@ Your terminal must send Option as Alt, or Option+; types a character instead:
 | `screen-word pick [--pane ID]` | Pick a word with fzf and print it. |
 | `screen-word words [--pane ID]` | Print the candidate words, newest first. |
 | `screen-word words --stdin` | Read the text from stdin instead of a pane. |
+| `screen-word setup` | Ask whether to set up herdr, zsh or both. |
 | `screen-word setup herdr [--key K]` | Add the popup binding to herdr's config. |
+| `screen-word setup zsh [--key K]` | Add the widget loader to `.zshrc`. |
+| `screen-word setup both` | herdr on alt+; and zsh on alt+'. |
 | `screen-word init zsh` | Print the zsh widget. |
 
 `--lines N` sets how many recent lines are read (default 300). The pane defaults to `$HERDR_ACTIVE_PANE_ID`, then `$HERDR_PANE_ID`.

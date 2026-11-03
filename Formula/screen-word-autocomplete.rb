@@ -17,11 +17,8 @@ class ScreenWordAutocomplete < Formula
     <<~EOS
       screen-word reads panes through herdr (https://herdr.dev), which must be on your PATH.
 
-      Bind Alt+; in herdr (works in any pane, including full-screen programs):
-        screen-word setup herdr
-
-      Or bind it in zsh only, by adding this to ~/.zshrc:
-        eval "$(screen-word init zsh)"
+      Choose herdr, zsh or both:
+        screen-word setup
 
       On macOS, make your terminal send Option as Alt (Ghostty: macos-option-as-alt = true).
     EOS

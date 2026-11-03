@@ -6,6 +6,8 @@ setup() {
   FAKE_BIN="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$FAKE_BIN"
   export HERDR_CONFIG_PATH="$BATS_TEST_TMPDIR/herdr/config.toml"
+  export ZDOTDIR="$BATS_TEST_TMPDIR/zdot"
+  mkdir -p "$ZDOTDIR"
   unset HERDR_PANE_ID HERDR_ACTIVE_PANE_ID
 }
 
@@ -85,6 +87,64 @@ EOF
   run "$FAKE_BIN/screen-word" setup herdr
   [ "$status" -eq 0 ]
   grep -q "command = \"$FAKE_BIN/screen-word popup\"" "$HERDR_CONFIG_PATH"
+}
+
+@test "setup zsh adds the loader to .zshrc once" {
+  run "$SW" setup zsh
+  [ "$status" -eq 0 ]
+  grep -q 'SCREEN_WORD_KEY="\^\[;"' "$ZDOTDIR/.zshrc"
+  grep -q 'eval "$(screen-word init zsh)"' "$ZDOTDIR/.zshrc"
+  run "$SW" setup zsh
+  [[ "$output" == *"already loaded"* ]]
+  [ "$(grep -c 'screen-word init zsh' "$ZDOTDIR/.zshrc")" -eq 1 ]
+}
+
+@test "setup zsh rejects a key it cannot translate" {
+  run "$SW" setup zsh --key 'f5'
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"zsh key must be"* ]]
+  [ ! -f "$ZDOTDIR/.zshrc" ]
+}
+
+@test "the .zshrc block binds the chosen key in zsh, including a quote key" {
+  command -v zsh >/dev/null || skip "zsh not installed"
+  ln -s "$SW" "$FAKE_BIN/screen-word"
+  run "$SW" setup zsh --key "alt+\""
+  [ "$status" -eq 0 ]
+  run env PATH="$FAKE_BIN:$PATH" zsh -ic "bindkey '^[\"'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"screen-word-widget"* ]]
+}
+
+@test "setup menu choice 1 sets up herdr only" {
+  fake_herdr
+  run "$SW" setup <<<"1"
+  [ "$status" -eq 0 ]
+  grep -q 'key = "alt+;"' "$HERDR_CONFIG_PATH"
+  [ ! -f "$ZDOTDIR/.zshrc" ]
+}
+
+@test "setup menu choice 2 sets up zsh only" {
+  run "$SW" setup <<<"2"
+  [ "$status" -eq 0 ]
+  grep -q 'SCREEN_WORD_KEY="\^\[;"' "$ZDOTDIR/.zshrc"
+  [ ! -f "$HERDR_CONFIG_PATH" ]
+}
+
+@test "setup menu choice 3 puts herdr on alt+; and zsh on alt+'" {
+  fake_herdr
+  run "$SW" setup <<<"3"
+  [ "$status" -eq 0 ]
+  grep -q 'key = "alt+;"' "$HERDR_CONFIG_PATH"
+  grep -q "SCREEN_WORD_KEY=\"^\['\"" "$ZDOTDIR/.zshrc"
+}
+
+@test "setup menu rejects an unknown choice and changes nothing" {
+  run "$SW" setup <<<"9"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"expected 1, 2 or 3"* ]]
+  [ ! -f "$HERDR_CONFIG_PATH" ]
+  [ ! -f "$ZDOTDIR/.zshrc" ]
 }
 
 @test "init zsh prints the widget, also through a symlink" {
