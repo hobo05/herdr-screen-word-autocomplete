@@ -79,6 +79,14 @@ EOF
   [ "$(grep -c 'keys.command' "$HERDR_CONFIG_PATH")" -eq 1 ]
 }
 
+@test "setup herdr binds the symlinked path, not its target" {
+  fake_herdr
+  ln -s "$SW" "$FAKE_BIN/screen-word"
+  run "$FAKE_BIN/screen-word" setup herdr
+  [ "$status" -eq 0 ]
+  grep -q "command = \"$FAKE_BIN/screen-word popup\"" "$HERDR_CONFIG_PATH"
+}
+
 @test "init zsh prints the widget, also through a symlink" {
   ln -s "$SW" "$FAKE_BIN/screen-word"
   run "$FAKE_BIN/screen-word" init zsh

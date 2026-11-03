@@ -3,7 +3,7 @@
 # Kept to bash 3.2 and BSD/GNU-common tools so it runs unchanged on macOS and Linux.
 set -euo pipefail
 
-VERSION="0.1.0"
+VERSION="0.1.1"
 DEFAULT_LINES=300
 DEFAULT_KEY="alt+;"
 
@@ -135,7 +135,8 @@ cmd_setup() {
     esac
   done
   config="$(herdr_config_path)"
-  self="$(script_dir)/screen-word"
+  # The path as invoked, not the symlink target, so a brew upgrade (new Cellar dir) keeps the binding working.
+  self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
   if [ -f "$config" ] && grep -q 'screen-word' "$config"; then
     echo "screen-word is already bound in $config; edit that block to change it."
     return 0
