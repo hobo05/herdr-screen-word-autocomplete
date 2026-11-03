@@ -3,7 +3,7 @@
 # Kept to bash 3.2 and BSD/GNU-common tools so it runs unchanged on macOS and Linux.
 set -euo pipefail
 
-VERSION="0.6.0"
+VERSION="0.7.0"
 
 usage() {
   cat <<'EOF'
@@ -13,6 +13,7 @@ Commands:
   setup [--key K]       Add a popup keybinding (default cmd+; on macOS, alt+; elsewhere)
                         to herdr's config.toml and reload it.
   uninstall             Remove that keybinding. Run it before brew uninstall.
+  doctor                Check that the keybinding still points at an installed screen-word.
   popup                 Pick a word from the pane under a herdr popup and type it into that pane.
                         The keybinding runs this.
   pick [--pane ID]      Pick a word with fzf and print it.
@@ -155,6 +156,7 @@ cmd_setup() {
   mkdir -p "$(dirname "$config")"
   cat >>"$config" <<EOF
 
+# >>> screen-word >>>
 [[keys.command]]
 key = "$key"
 type = "popup"
@@ -162,6 +164,7 @@ command = "$self popup"
 description = "insert a word from this pane's output"
 width = "60%"
 height = "50%"
+# <<< screen-word <<<
 EOF
   echo "Added $key to $config"
   reload_herdr
@@ -182,9 +185,18 @@ rewrite_file() {
   rm -f "$tmp"
 }
 
-# Drops each [[keys.command]] table that mentions screen-word, with the blank lines before it.
+# Drops marked screen-word blocks and, for configs written by older versions, any
+# [[keys.command]] table that mentions screen-word, with the blank lines before it.
 strip_herdr_block() {
   awk '
+    /^[ \t]*# >>> screen-word >>>[ \t]*$/ { in_block = 1; pending = ""; next }
+    in_block {
+      if ($0 ~ /^[ \t]*# <<< screen-word <<<[ \t]*$/) in_block = 0
+      next
+    }
+    /^[ \t]*$/ { pending = pending $0 "\n"; next }
+    { printf "%s%s\n", pending, $0; pending = "" }
+    END { if (!in_block) printf "%s", pending }' | awk '
     function flush() {
       if (!(is_cmd && cur ~ /screen-word/)) printf "%s%s", lead, cur
     }
@@ -212,6 +224,78 @@ cmd_uninstall() {
   reload_herdr
 }
 
+# Prints "key<TAB>command" for every [[keys.command]] table that mentions screen-word.
+binding_report() {
+  awk '
+    function flush() {
+      if (in_cmd && mentions) printf "%s\t%s\n", key, cmdline
+    }
+    function value(line,   s) {
+      s = line
+      sub(/^[^=]*=[ \t]*/, "", s)
+      if (s ~ /^"/) { sub(/^"/, "", s); sub(/"[ \t]*$/, "", s) }
+      return s
+    }
+    /^[ \t]*\[/ {
+      flush()
+      in_cmd = ($0 ~ /^[ \t]*\[\[keys\.command\]\]/)
+      mentions = 0
+      key = ""
+      cmdline = ""
+      next
+    }
+    in_cmd {
+      if ($0 ~ /^[ \t]*key[ \t]*=/) key = value($0)
+      else if ($0 ~ /^[ \t]*command[ \t]*=/) cmdline = value($0)
+      if ($0 ~ /screen-word/) mentions = 1
+    }
+    END { flush() }'
+}
+
+binding_command_exists() {
+  case "$1" in
+    /*) [ -x "$1" ] ;;
+    *) command -v "$1" >/dev/null 2>&1 ;;
+  esac
+}
+
+cmd_doctor() {
+  [ $# -eq 0 ] || die "usage: screen-word doctor"
+  local config report count=0 problems=0 path
+  config="$(herdr_config_path)"
+  echo "herdr config: $config"
+  if [ ! -f "$config" ]; then
+    echo "No herdr config, so nothing to check."
+    return 0
+  fi
+  report="$(binding_report <"$config")"
+  if [ -z "$report" ]; then
+    echo "No screen-word binding."
+    return 0
+  fi
+  while IFS=$'\t' read -r key cmdline; do
+    count=$((count + 1))
+    printf 'Binding: key = "%s", command = "%s"\n' "$key" "$cmdline"
+    path="${cmdline%% *}"
+    if [ -z "$path" ] || ! binding_command_exists "$path"; then
+      printf '  missing: %s\n' "${path:-<empty command>}"
+      problems=$((problems + 1))
+    fi
+  done <<EOF
+$report
+EOF
+  if [ "$count" -gt 1 ]; then
+    printf '%d screen-word bindings found; herdr needs only one. Run screen-word uninstall, then screen-word setup.\n' "$count"
+    problems=$((problems + 1))
+  fi
+  if [ "$problems" -gt 0 ]; then
+    echo "Run screen-word uninstall to remove the binding, or reinstall screen-word to restore it."
+    return 1
+  fi
+  echo "The binding is healthy."
+  return 0
+}
+
 main() {
   [ $# -gt 0 ] || { usage; exit 1; }
   local cmd="$1"
@@ -219,6 +303,7 @@ main() {
   case "$cmd" in
     setup) cmd_setup "$@" ;;
     uninstall) cmd_uninstall "$@" ;;
+    doctor) cmd_doctor "$@" ;;
     popup) cmd_popup "$@" ;;
     pick) cmd_pick "$@" ;;
     words) cmd_words "$@" ;;

@@ -97,6 +97,14 @@ EOF
   [ "$(grep -c 'keys.command' "$HERDR_CONFIG_PATH")" -eq 1 ]
 }
 
+@test "setup writes a marked block that uninstall can find" {
+  fake_herdr
+  run "$SW" setup --key 'alt+x'
+  [ "$status" -eq 0 ]
+  grep -q '^# >>> screen-word >>>$' "$HERDR_CONFIG_PATH"
+  grep -q '^# <<< screen-word <<<$' "$HERDR_CONFIG_PATH"
+}
+
 @test "setup defaults to cmd+; on macOS" {
   fake_herdr
   fake_uname Darwin
@@ -191,5 +199,54 @@ EOF
   run "$SW" uninstall
   [ "$status" -eq 0 ]
   [[ "$output" == *"No screen-word binding"* ]]
+  [ ! -f "$HERDR_CONFIG_PATH" ]
+}
+
+@test "doctor reports a healthy binding" {
+  fake_herdr
+  "$SW" setup --key 'alt+x'
+  run "$SW" doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'key = "alt+x"'* ]]
+  [[ "$output" == *"The binding is healthy."* ]]
+}
+
+@test "doctor flags a binding whose command is gone" {
+  fake_herdr
+  mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
+  cat >"$HERDR_CONFIG_PATH" <<'EOF'
+# >>> screen-word >>>
+[[keys.command]]
+key = "alt+x"
+type = "popup"
+command = "/nonexistent/screen-word popup"
+# <<< screen-word <<<
+EOF
+  run "$SW" doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"missing: /nonexistent/screen-word"* ]]
+  [[ "$output" == *"screen-word uninstall"* ]]
+}
+
+@test "doctor flags duplicate bindings" {
+  fake_herdr
+  "$SW" setup --key 'alt+x'
+  cat >>"$HERDR_CONFIG_PATH" <<EOF
+# >>> screen-word >>>
+[[keys.command]]
+key = "alt+y"
+type = "popup"
+command = "$SW popup"
+# <<< screen-word <<<
+EOF
+  run "$SW" doctor
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"2 screen-word bindings"* ]]
+}
+
+@test "doctor does not create a config when there is none" {
+  run "$SW" doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"nothing to check"* ]]
   [ ! -f "$HERDR_CONFIG_PATH" ]
 }

@@ -32,7 +32,7 @@ screen-word setup --key alt+o
 
 `setup` picks the chord the OS can deliver by default: Cmd+; on macOS, where Option would compose `…` unless every terminal is configured to send Alt, and Alt+; on Linux, which has no Cmd key. Pass `--key` to choose another chord.
 
-This adds a popup binding to `~/.config/herdr/config.toml` (or `$HERDR_CONFIG_PATH`) and reloads the running herdr server. When you press the key, herdr opens a popup with fzf over the words of the pane underneath. Pick one and it is typed into that pane. Running setup again leaves an existing binding alone.
+This adds a popup binding to `~/.config/herdr/config.toml` (or `$HERDR_CONFIG_PATH`) and reloads the running herdr server. The binding is wrapped in `# >>> screen-word >>>` / `# <<< screen-word <<<` comments so it is easy to find and remove by hand. When you press the key, herdr opens a popup with fzf over the words of the pane underneath. Pick one and it is typed into that pane. Running setup again leaves an existing binding alone.
 
 herdr sees the key before the program in the pane, which is why it works inside Claude Code, vim and other full-screen programs as well as at a shell prompt.
 
@@ -45,7 +45,7 @@ screen-word uninstall
 brew uninstall screen-word-autocomplete
 ```
 
-This removes the binding, reloads herdr, and leaves the rest of the config as it was. If you uninstall with brew first, the key would open a popup that fails, so delete the `[[keys.command]]` block that mentions `screen-word` from herdr's `config.toml`.
+This removes the binding, reloads herdr, and leaves the rest of the config as it was. If you uninstall with brew first, the key would open a popup that fails, so delete the `[[keys.command]]` block between the `# >>> screen-word >>>` and `# <<< screen-word <<<` comments in herdr's `config.toml`. `screen-word doctor` reports a binding whose command is gone, as well as duplicate bindings.
 
 ### macOS
 
@@ -63,6 +63,7 @@ Only if you bind Alt+; with `screen-word setup --key alt+;` must your terminal s
 |---|---|
 | `screen-word setup [--key K]` | Add the popup binding to herdr's config: Cmd+; on macOS, Alt+; elsewhere. |
 | `screen-word uninstall` | Remove the popup binding. |
+| `screen-word doctor` | Report a binding whose command is gone, and duplicate bindings. |
 | `screen-word popup` | Pick from the pane under a herdr popup and type the word into it. Used by the binding. |
 | `screen-word pick [--pane ID]` | Pick a word with fzf and print it. |
 | `screen-word words [--pane ID]` | Print the candidate words, newest first. |
