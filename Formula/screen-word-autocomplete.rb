@@ -2,7 +2,7 @@ class ScreenWordAutocomplete < Formula
   desc "Pick a word from your herdr pane's output with fzf and insert it"
   homepage "https://github.com/hobo05/screen-word-autocomplete"
   url "https://github.com/hobo05/screen-word-autocomplete/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "0000000000000000000000000000000000000000000000000000000000000000"
+  sha256 "092d095b9d71b875b539fc56182b2c996d42cdd5f95ba2148ebadd41665c92ce"
   license "MIT"
   head "https://github.com/hobo05/screen-word-autocomplete.git", branch: "main"
 
