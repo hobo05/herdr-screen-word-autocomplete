@@ -20,6 +20,9 @@ class ScreenWordAutocomplete < Formula
       Choose herdr, zsh or both:
         screen-word setup
 
+      Before brew uninstall, remove what setup added:
+        screen-word uninstall
+
       On macOS, make your terminal send Option as Alt (Ghostty: macos-option-as-alt = true).
     EOS
   end

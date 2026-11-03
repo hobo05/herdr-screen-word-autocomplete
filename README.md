@@ -66,6 +66,19 @@ SCREEN_WORD_KEY='^[;'   # optional, this is the default
 eval "$(screen-word init zsh)"
 ```
 
+### Uninstall
+
+`brew uninstall` only removes the files brew installed, not what `screen-word setup` added to your configs. Remove those first:
+
+```sh
+screen-word uninstall          # herdr and zsh; or: screen-word uninstall herdr|zsh
+brew uninstall screen-word-autocomplete
+```
+
+This removes the herdr binding (and reloads herdr) and the `.zshrc` block that setup wrote, and leaves the rest of each file as it was. Lines you wrote by hand, such as your own `eval "$(screen-word init zsh)"`, are left for you to remove; uninstall says so when it finds any.
+
+If you uninstall with brew first, the `.zshrc` block does nothing, because it checks that `screen-word` exists. The herdr key would open a popup that fails, so delete the `[[keys.command]]` block that mentions `screen-word` from herdr's `config.toml`.
+
 ### macOS
 
 Your terminal must send Option as Alt, or Option+; types a character instead:
@@ -86,6 +99,7 @@ Your terminal must send Option as Alt, or Option+; types a character instead:
 | `screen-word setup herdr [--key K]` | Add the popup binding to herdr's config. |
 | `screen-word setup zsh [--key K]` | Add the widget loader to `.zshrc`. |
 | `screen-word setup both` | herdr on alt+; and zsh on alt+'. |
+| `screen-word uninstall [herdr\|zsh\|both]` | Remove what setup added (default both). |
 | `screen-word init zsh` | Print the zsh widget. |
 
 `--lines N` sets how many recent lines are read (default 300). The pane defaults to `$HERDR_ACTIVE_PANE_ID`, then `$HERDR_PANE_ID`.

@@ -3,7 +3,7 @@
 # Kept to bash 3.2 and BSD/GNU-common tools so it runs unchanged on macOS and Linux.
 set -euo pipefail
 
-VERSION="0.2.0"
+VERSION="0.3.0"
 DEFAULT_LINES=300
 DEFAULT_KEY="alt+;"
 # With both set up, herdr takes alt+; before zsh sees it, so zsh gets its own key.
@@ -23,6 +23,8 @@ Commands:
   setup herdr [--key K] Add a popup keybinding (default alt+;) to herdr's config.toml and reload it.
   setup zsh [--key K]   Load the zsh widget (default alt+;) from your .zshrc.
   setup both            Set up herdr on alt+; and zsh on alt+'.
+  uninstall [herdr|zsh|both]
+                        Remove what setup added (default both). Run it before brew uninstall.
   init zsh              Print a zsh widget that inserts a picked word at the cursor.
 
 Options:
@@ -234,6 +236,84 @@ cmd_setup() {
   esac
 }
 
+# Rewrites a file in place through its path, so a symlinked config keeps pointing at its target.
+# Prints nothing and leaves the file alone when the filter changed nothing; returns 1 then.
+rewrite_file() {
+  local file="$1" tmp
+  shift
+  tmp="$(mktemp)"
+  "$@" <"$file" >"$tmp"
+  if cmp -s "$file" "$tmp"; then
+    rm -f "$tmp"
+    return 1
+  fi
+  cat "$tmp" >"$file"
+  rm -f "$tmp"
+}
+
+# Drops each [[keys.command]] table that mentions screen-word, with the blank lines before it.
+strip_herdr_block() {
+  awk '
+    function flush() {
+      if (!(is_cmd && cur ~ /screen-word/)) printf "%s%s", lead, cur
+    }
+    /^[ \t]*\[/ {
+      flush()
+      lead = gap; gap = ""; cur = $0 "\n"
+      is_cmd = ($0 ~ /^[ \t]*\[\[keys\.command\]\]/)
+      next
+    }
+    /^[ \t]*$/ { gap = gap $0 "\n"; next }
+    { cur = cur gap $0 "\n"; gap = "" }
+    END { cur = cur gap; flush() }'
+}
+
+# Drops the block `setup zsh` wrote, from its marker comment to its closing fi, with the blank lines before it.
+strip_zsh_block() {
+  awk '
+    /\(added by screen-word setup zsh\)$/ { skip = 1; held = ""; next }
+    skip { if ($0 ~ /^fi[ \t]*$/) skip = 0; next }
+    /^[ \t]*$/ { held = held $0 "\n"; next }
+    { printf "%s%s\n", held, $0; held = "" }
+    END { printf "%s", held }'
+}
+
+uninstall_herdr() {
+  local config
+  config="$(herdr_config_path)"
+  if [ ! -f "$config" ] || ! rewrite_file "$config" strip_herdr_block; then
+    echo "No screen-word binding in $config."
+    return 0
+  fi
+  echo "Removed the screen-word binding from $config"
+  if command -v herdr >/dev/null 2>&1 && herdr config check >/dev/null 2>&1; then
+    herdr server reload-config >/dev/null 2>&1 && echo "Reloaded the running herdr server." || true
+  fi
+}
+
+uninstall_zsh() {
+  local rc
+  rc="$(zshrc_path)"
+  if [ ! -f "$rc" ] || ! rewrite_file "$rc" strip_zsh_block; then
+    echo "No screen-word block in $rc."
+  else
+    echo "Removed the screen-word block from $rc; open a new shell to drop the binding."
+  fi
+  if [ -f "$rc" ] && grep -q 'screen-word' "$rc"; then
+    echo "Note: $rc still mentions screen-word in lines setup did not write; remove those by hand."
+  fi
+}
+
+cmd_uninstall() {
+  [ $# -le 1 ] || die "usage: screen-word uninstall [herdr|zsh|both]"
+  case "${1:-both}" in
+    herdr) uninstall_herdr ;;
+    zsh) uninstall_zsh ;;
+    both) uninstall_herdr; uninstall_zsh ;;
+    *) die "usage: screen-word uninstall [herdr|zsh|both]" ;;
+  esac
+}
+
 cmd_init() {
   [ "${1:-}" = "zsh" ] || die "usage: screen-word init zsh"
   local file
@@ -251,6 +331,7 @@ main() {
     pick) cmd_pick "$@" ;;
     popup) cmd_popup "$@" ;;
     setup) cmd_setup "$@" ;;
+    uninstall) cmd_uninstall "$@" ;;
     init) cmd_init "$@" ;;
     -h | --help | help) usage ;;
     -V | --version) echo "screen-word $VERSION" ;;

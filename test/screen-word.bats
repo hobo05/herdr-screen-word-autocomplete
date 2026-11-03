@@ -147,6 +147,88 @@ EOF
   [ ! -f "$ZDOTDIR/.zshrc" ]
 }
 
+@test "uninstall herdr restores the config exactly, keeping other bindings" {
+  fake_herdr
+  mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
+  cat >"$HERDR_CONFIG_PATH" <<'EOF'
+onboarding = false
+
+[[keys.command]]
+key = "prefix+g"
+type = "popup"
+command = "lazygit"
+
+[ui.toast]
+delivery = "terminal"
+EOF
+  cp "$HERDR_CONFIG_PATH" "$BATS_TEST_TMPDIR/before.toml"
+  "$SW" setup herdr
+  run "$SW" uninstall herdr
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Removed the screen-word binding"* ]]
+  cmp "$HERDR_CONFIG_PATH" "$BATS_TEST_TMPDIR/before.toml"
+}
+
+@test "uninstall herdr removes a binding placed between other tables" {
+  mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
+  cat >"$HERDR_CONFIG_PATH" <<'EOF'
+[[keys.command]]
+key = "alt+;"
+type = "popup"
+command = "/opt/bin/screen-word popup"
+
+[[keys.command]]
+key = "prefix+g"
+command = "lazygit"
+EOF
+  run "$SW" uninstall herdr
+  [ "$status" -eq 0 ]
+  ! grep -q 'screen-word' "$HERDR_CONFIG_PATH"
+  grep -q 'lazygit' "$HERDR_CONFIG_PATH"
+  [ "$(grep -c 'keys.command' "$HERDR_CONFIG_PATH")" -eq 1 ]
+}
+
+@test "uninstall zsh restores a symlinked .zshrc exactly and keeps the symlink" {
+  printf 'export A=1\n\nalias ll="ls -l"\n' >"$BATS_TEST_TMPDIR/real.zshrc"
+  cp "$BATS_TEST_TMPDIR/real.zshrc" "$BATS_TEST_TMPDIR/before.zshrc"
+  ln -s "$BATS_TEST_TMPDIR/real.zshrc" "$ZDOTDIR/.zshrc"
+  "$SW" setup zsh --key "alt+'"
+  run "$SW" uninstall zsh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Removed the screen-word block"* ]]
+  [ -L "$ZDOTDIR/.zshrc" ]
+  cmp "$BATS_TEST_TMPDIR/real.zshrc" "$BATS_TEST_TMPDIR/before.zshrc"
+}
+
+@test "uninstall zsh points out hand-written screen-word lines it leaves" {
+  printf 'eval "$(screen-word init zsh)"\n' >"$ZDOTDIR/.zshrc"
+  run "$SW" uninstall zsh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"No screen-word block"* ]]
+  [[ "$output" == *"remove those by hand"* ]]
+  grep -q 'screen-word init zsh' "$ZDOTDIR/.zshrc"
+}
+
+@test "uninstall with no target removes both and is safe to repeat" {
+  fake_herdr
+  "$SW" setup both
+  run "$SW" uninstall
+  [ "$status" -eq 0 ]
+  ! grep -q 'screen-word' "$HERDR_CONFIG_PATH"
+  ! grep -q 'screen-word' "$ZDOTDIR/.zshrc"
+  run "$SW" uninstall
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"No screen-word binding"* ]]
+  [[ "$output" == *"No screen-word block"* ]]
+}
+
+@test "uninstall with nothing set up creates no files" {
+  run "$SW" uninstall
+  [ "$status" -eq 0 ]
+  [ ! -f "$HERDR_CONFIG_PATH" ]
+  [ ! -f "$ZDOTDIR/.zshrc" ]
+}
+
 @test "init zsh prints the widget, also through a symlink" {
   ln -s "$SW" "$FAKE_BIN/screen-word"
   run "$FAKE_BIN/screen-word" init zsh
