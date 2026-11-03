@@ -6,8 +6,6 @@ setup() {
   FAKE_BIN="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$FAKE_BIN"
   export HERDR_CONFIG_PATH="$BATS_TEST_TMPDIR/herdr/config.toml"
-  export ZDOTDIR="$BATS_TEST_TMPDIR/zdot"
-  mkdir -p "$ZDOTDIR"
   unset HERDR_PANE_ID HERDR_ACTIVE_PANE_ID
 }
 
@@ -70,84 +68,40 @@ EOF
   ! grep -q 'send-text' "$BATS_TEST_TMPDIR/herdr.calls"
 }
 
-@test "setup herdr adds one popup binding and is idempotent" {
+@test "setup adds one popup binding and is idempotent" {
   fake_herdr
-  run "$SW" setup herdr --key 'alt+x'
+  run "$SW" setup --key 'alt+x'
   [ "$status" -eq 0 ]
   grep -q 'key = "alt+x"' "$HERDR_CONFIG_PATH"
   grep -q "command = \"$ROOT/bin/screen-word popup\"" "$HERDR_CONFIG_PATH"
-  run "$SW" setup herdr
+  run "$SW" setup
   [[ "$output" == *"already bound"* ]]
   [ "$(grep -c 'keys.command' "$HERDR_CONFIG_PATH")" -eq 1 ]
 }
 
-@test "setup herdr binds the symlinked path, not its target" {
+@test "setup still accepts the herdr target from earlier versions" {
+  fake_herdr
+  run "$SW" setup herdr
+  [ "$status" -eq 0 ]
+  grep -q 'key = "alt+;"' "$HERDR_CONFIG_PATH"
+}
+
+@test "setup rejects a target other than herdr" {
+  run "$SW" setup zsh
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"usage: screen-word setup"* ]]
+  [ ! -f "$HERDR_CONFIG_PATH" ]
+}
+
+@test "setup binds the symlinked path, not its target" {
   fake_herdr
   ln -s "$SW" "$FAKE_BIN/screen-word"
-  run "$FAKE_BIN/screen-word" setup herdr
+  run "$FAKE_BIN/screen-word" setup
   [ "$status" -eq 0 ]
   grep -q "command = \"$FAKE_BIN/screen-word popup\"" "$HERDR_CONFIG_PATH"
 }
 
-@test "setup zsh adds the loader to .zshrc once" {
-  run "$SW" setup zsh
-  [ "$status" -eq 0 ]
-  grep -q 'SCREEN_WORD_KEY="\^\[;"' "$ZDOTDIR/.zshrc"
-  grep -q 'eval "$(screen-word init zsh)"' "$ZDOTDIR/.zshrc"
-  run "$SW" setup zsh
-  [[ "$output" == *"already loaded"* ]]
-  [ "$(grep -c 'screen-word init zsh' "$ZDOTDIR/.zshrc")" -eq 1 ]
-}
-
-@test "setup zsh rejects a key it cannot translate" {
-  run "$SW" setup zsh --key 'f5'
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"zsh key must be"* ]]
-  [ ! -f "$ZDOTDIR/.zshrc" ]
-}
-
-@test "the .zshrc block binds the chosen key in zsh, including a quote key" {
-  command -v zsh >/dev/null || skip "zsh not installed"
-  ln -s "$SW" "$FAKE_BIN/screen-word"
-  run "$SW" setup zsh --key "alt+\""
-  [ "$status" -eq 0 ]
-  run env PATH="$FAKE_BIN:$PATH" zsh -ic "bindkey '^[\"'"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"screen-word-widget"* ]]
-}
-
-@test "setup menu choice 1 sets up herdr only" {
-  fake_herdr
-  run "$SW" setup <<<"1"
-  [ "$status" -eq 0 ]
-  grep -q 'key = "alt+;"' "$HERDR_CONFIG_PATH"
-  [ ! -f "$ZDOTDIR/.zshrc" ]
-}
-
-@test "setup menu choice 2 sets up zsh only" {
-  run "$SW" setup <<<"2"
-  [ "$status" -eq 0 ]
-  grep -q 'SCREEN_WORD_KEY="\^\[;"' "$ZDOTDIR/.zshrc"
-  [ ! -f "$HERDR_CONFIG_PATH" ]
-}
-
-@test "setup menu choice 3 puts herdr on alt+; and zsh on alt+'" {
-  fake_herdr
-  run "$SW" setup <<<"3"
-  [ "$status" -eq 0 ]
-  grep -q 'key = "alt+;"' "$HERDR_CONFIG_PATH"
-  grep -q "SCREEN_WORD_KEY=\"^\['\"" "$ZDOTDIR/.zshrc"
-}
-
-@test "setup menu rejects an unknown choice and changes nothing" {
-  run "$SW" setup <<<"9"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"expected 1, 2 or 3"* ]]
-  [ ! -f "$HERDR_CONFIG_PATH" ]
-  [ ! -f "$ZDOTDIR/.zshrc" ]
-}
-
-@test "uninstall herdr restores the config exactly, keeping other bindings" {
+@test "uninstall restores the config exactly, keeping other bindings" {
   fake_herdr
   mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
   cat >"$HERDR_CONFIG_PATH" <<'EOF'
@@ -162,14 +116,14 @@ command = "lazygit"
 delivery = "terminal"
 EOF
   cp "$HERDR_CONFIG_PATH" "$BATS_TEST_TMPDIR/before.toml"
-  "$SW" setup herdr
-  run "$SW" uninstall herdr
+  "$SW" setup
+  run "$SW" uninstall
   [ "$status" -eq 0 ]
   [[ "$output" == *"Removed the screen-word binding"* ]]
   cmp "$HERDR_CONFIG_PATH" "$BATS_TEST_TMPDIR/before.toml"
 }
 
-@test "uninstall herdr removes a binding placed between other tables" {
+@test "uninstall removes a binding placed between other tables" {
   mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
   cat >"$HERDR_CONFIG_PATH" <<'EOF'
 [[keys.command]]
@@ -181,64 +135,27 @@ command = "/opt/bin/screen-word popup"
 key = "prefix+g"
 command = "lazygit"
 EOF
-  run "$SW" uninstall herdr
+  run "$SW" uninstall
   [ "$status" -eq 0 ]
   ! grep -q 'screen-word' "$HERDR_CONFIG_PATH"
   grep -q 'lazygit' "$HERDR_CONFIG_PATH"
   [ "$(grep -c 'keys.command' "$HERDR_CONFIG_PATH")" -eq 1 ]
 }
 
-@test "uninstall zsh restores a symlinked .zshrc exactly and keeps the symlink" {
-  printf 'export A=1\n\nalias ll="ls -l"\n' >"$BATS_TEST_TMPDIR/real.zshrc"
-  cp "$BATS_TEST_TMPDIR/real.zshrc" "$BATS_TEST_TMPDIR/before.zshrc"
-  ln -s "$BATS_TEST_TMPDIR/real.zshrc" "$ZDOTDIR/.zshrc"
-  "$SW" setup zsh --key "alt+'"
-  run "$SW" uninstall zsh
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Removed the screen-word block"* ]]
-  [ -L "$ZDOTDIR/.zshrc" ]
-  cmp "$BATS_TEST_TMPDIR/real.zshrc" "$BATS_TEST_TMPDIR/before.zshrc"
-}
-
-@test "uninstall zsh points out hand-written screen-word lines it leaves" {
-  printf 'eval "$(screen-word init zsh)"\n' >"$ZDOTDIR/.zshrc"
-  run "$SW" uninstall zsh
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"No screen-word block"* ]]
-  [[ "$output" == *"remove those by hand"* ]]
-  grep -q 'screen-word init zsh' "$ZDOTDIR/.zshrc"
-}
-
-@test "uninstall with no target removes both and is safe to repeat" {
-  fake_herdr
-  "$SW" setup both
+@test "uninstall keeps a symlinked config a symlink" {
+  mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
+  printf 'onboarding = false\n' >"$BATS_TEST_TMPDIR/real.toml"
+  ln -s "$BATS_TEST_TMPDIR/real.toml" "$HERDR_CONFIG_PATH"
+  "$SW" setup
   run "$SW" uninstall
   [ "$status" -eq 0 ]
-  ! grep -q 'screen-word' "$HERDR_CONFIG_PATH"
-  ! grep -q 'screen-word' "$ZDOTDIR/.zshrc"
+  [ -L "$HERDR_CONFIG_PATH" ]
+  [ "$(cat "$BATS_TEST_TMPDIR/real.toml")" = "onboarding = false" ]
+}
+
+@test "uninstall is safe to repeat and creates no files when nothing is set up" {
   run "$SW" uninstall
   [ "$status" -eq 0 ]
   [[ "$output" == *"No screen-word binding"* ]]
-  [[ "$output" == *"No screen-word block"* ]]
-}
-
-@test "uninstall with nothing set up creates no files" {
-  run "$SW" uninstall
-  [ "$status" -eq 0 ]
   [ ! -f "$HERDR_CONFIG_PATH" ]
-  [ ! -f "$ZDOTDIR/.zshrc" ]
-}
-
-@test "init zsh prints the widget, also through a symlink" {
-  ln -s "$SW" "$FAKE_BIN/screen-word"
-  run "$FAKE_BIN/screen-word" init zsh
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"zle -N screen-word-widget"* ]]
-}
-
-@test "the zsh widget loads in zsh and binds Alt+;" {
-  command -v zsh >/dev/null || skip "zsh not installed"
-  run zsh -fic "eval \"\$($SW init zsh)\"; bindkey '^[;'"
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"screen-word-widget"* ]]
 }
