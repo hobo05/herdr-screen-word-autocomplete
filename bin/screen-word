@@ -3,8 +3,7 @@
 # Kept to bash 3.2 and BSD/GNU-common tools so it runs unchanged on macOS and Linux.
 set -euo pipefail
 
-VERSION="0.4.0"
-DEFAULT_LINES=300
+VERSION="0.5.0"
 DEFAULT_KEY="alt+;"
 
 usage() {
@@ -21,7 +20,8 @@ Commands:
   words --stdin         Read the text from stdin instead of a pane.
 
 Options:
-  --lines N             How many recent lines to read (default 300).
+  --lines N             Read the last N lines of output, including scrollback, instead of only
+                        what is visible in the pane.
   -h, --help            Show this help.
   -V, --version         Show the version.
 
@@ -40,9 +40,14 @@ resolve_pane() {
   printf '%s\n' "$pane"
 }
 
+# Reads what is visible in the pane, or the last N lines including scrollback when N is given.
 read_pane() {
   command -v herdr >/dev/null 2>&1 || die "herdr is not on PATH"
-  herdr pane read "$1" --source recent-unwrapped --lines "$2"
+  if [ -n "$2" ]; then
+    herdr pane read "$1" --source recent-unwrapped --lines "$2"
+  else
+    herdr pane read "$1" --source visible
+  fi
 }
 
 # Splits text into words, trims surrounding quotes, brackets and trailing punctuation,
@@ -71,7 +76,7 @@ choose() {
 
 parse_common() {
   PANE=""
-  LINES_TO_READ="$DEFAULT_LINES"
+  LINES_TO_READ=""
   STDIN=0
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -81,7 +86,7 @@ parse_common() {
       *) die "unknown option: $1" ;;
     esac
   done
-  case "$LINES_TO_READ" in '' | *[!0-9]*) die "--lines must be a number" ;; esac
+  case "$LINES_TO_READ" in *[!0-9]*) die "--lines must be a number" ;; esac
 }
 
 source_text() {

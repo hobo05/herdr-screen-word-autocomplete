@@ -33,12 +33,25 @@ EOF
   [ "$output" = $'end\npath/to/file.java:42\nangle\nparen\nquoted' ]
 }
 
-@test "words reads the pane named by HERDR_PANE_ID through herdr" {
+@test "words reads only the visible part of the pane named by HERDR_PANE_ID" {
   fake_herdr
   HERDR_PANE_ID=w1:p1 run "$SW" words
   [ "$status" -eq 0 ]
   [ "$output" = $'line\noutput\nnewer\nhere\nwords\nold' ]
-  grep -q 'pane read w1:p1 --source recent-unwrapped --lines 300' "$BATS_TEST_TMPDIR/herdr.calls"
+  grep -q '^pane read w1:p1 --source visible$' "$BATS_TEST_TMPDIR/herdr.calls"
+}
+
+@test "words --lines reads that many recent lines, including scrollback" {
+  fake_herdr
+  HERDR_PANE_ID=w1:p1 run "$SW" words --lines 500
+  [ "$status" -eq 0 ]
+  grep -q '^pane read w1:p1 --source recent-unwrapped --lines 500$' "$BATS_TEST_TMPDIR/herdr.calls"
+}
+
+@test "words --lines rejects a value that is not a number" {
+  run "$SW" words --lines lots
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"--lines must be a number"* ]]
 }
 
 @test "words without a pane fails with a hint" {

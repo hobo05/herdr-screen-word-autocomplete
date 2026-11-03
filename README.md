@@ -1,6 +1,6 @@
 # herdr-screen-word-autocomplete
 
-Press **Alt+;** in a [herdr](https://herdr.dev) pane, fuzzy-pick any word from that pane's recent output, and have it typed at your cursor. It works at a shell prompt and inside full-screen programs such as Claude Code, vim or less.
+Press **Alt+;** in a [herdr](https://herdr.dev) pane, fuzzy-pick any word visible in that pane, and have it typed at your cursor. It works at a shell prompt and inside full-screen programs such as Claude Code, vim or less.
 
 ```
 $ git status
@@ -64,7 +64,9 @@ Your terminal must send Option as Alt, or Option+; types a character instead:
 | `screen-word words [--pane ID]` | Print the candidate words, newest first. |
 | `screen-word words --stdin` | Read the text from stdin instead of a pane. |
 
-`--lines N` sets how many recent lines are read (default 300). The pane defaults to `$HERDR_ACTIVE_PANE_ID`, then `$HERDR_PANE_ID`.
+By default only what is visible in the pane is read, so the picker offers the words you can see. `--lines N` reads the last N lines of output instead, including scrollback. The pane defaults to `$HERDR_ACTIVE_PANE_ID`, then `$HERDR_PANE_ID`.
+
+To use scrollback from the keybinding, add `--lines` to its command in herdr's `config.toml`, for example `command = "/opt/homebrew/bin/screen-word popup --lines 300"`.
 
 Words are split on whitespace. Surrounding quotes and brackets, and trailing punctuation such as `,` `:` `.`, are trimmed. Words shorter than 3 characters are dropped, and each word is listed once.
 
