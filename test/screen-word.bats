@@ -116,7 +116,7 @@ binding() {
   [ "$(readlink "$MOD")" = "$prefix/share/screen-word-autocomplete/mod" ]
 }
 
-@test "setup removes the old herdr (TUI) binding" {
+@test "setup removes the old herdr TUI binding" {
   mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
   cat >"$HERDR_CONFIG_PATH" <<'EOF'
 onboarding = false
@@ -130,7 +130,7 @@ command = "/opt/homebrew/bin/screen-word popup"
 EOF
   run "$SW" setup --key alt-x
   [ "$status" -eq 0 ]
-  [[ "$output" == *"Removed the old herdr (TUI) binding"* ]]
+  [[ "$output" == *"Removed the old herdr TUI binding"* ]]
   [ "$(cat "$HERDR_CONFIG_PATH")" = "onboarding = false" ]
 }
 
@@ -203,12 +203,12 @@ EOF
   [[ "$output" == *"2 bindings found"* ]]
 }
 
-@test "doctor flags a leftover herdr (TUI) binding" {
+@test "doctor flags a leftover herdr TUI binding" {
   fake_herdr_app
   "$SW" setup --key alt-x
   mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
   printf '[[keys.command]]\nkey = "alt+;"\ncommand = "/x/screen-word popup"\n' >"$HERDR_CONFIG_PATH"
   run "$SW" doctor
   [ "$status" -eq 1 ]
-  [[ "$output" == *"old herdr (TUI) binding"* ]]
+  [[ "$output" == *"old herdr TUI binding"* ]]
 }

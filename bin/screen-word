@@ -12,9 +12,9 @@ usage() {
 Usage: screen-word <command> [options]
 
 Commands:
-  setup [--key K]       Install the herdr-app mod and bind it in keys.json
+  setup [--key K]       Link the herdr-app mod and bind it in keys.json
                         (default cmd-; on macOS, alt-; elsewhere).
-  uninstall             Remove the binding and the mod. Run it before brew uninstall.
+  uninstall             Remove the binding and the mod link. Run it before brew uninstall.
   doctor                Check the binding, the mod and the tools it needs.
 
 Options:
@@ -143,7 +143,7 @@ remove_legacy_herdr_binding() {
   local config
   config="$(legacy_herdr_config)"
   if [ -f "$config" ] && rewrite_file "$config" strip_legacy_herdr_block; then
-    echo "Removed the old herdr (TUI) binding from $config"
+    echo "Removed the old herdr TUI binding from $config"
   fi
 }
 
@@ -284,7 +284,7 @@ cmd_doctor() {
   fi
 
   if [ -f "$(legacy_herdr_config)" ] && grep -q 'screen-word' "$(legacy_herdr_config)"; then
-    echo "  old herdr (TUI) binding in $(legacy_herdr_config): run screen-word setup or uninstall to remove it"
+    echo "  old herdr TUI binding in $(legacy_herdr_config): run screen-word setup or uninstall to remove it"
     problems=$((problems + 1))
   fi
 

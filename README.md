@@ -9,7 +9,7 @@ $ git diff ▮          ← Cmd+; (Alt+; on Linux) → type "Rout" → Enter
 $ git diff src/main/java/com/example/PaymentRouter.java
 ```
 
-Works on macOS and Linux. It needs herdr-app, the desktop app. The older `herdr` terminal multiplexer is no longer supported.
+Works on macOS and Linux. It needs herdr-app, the desktop app. The older herdr TUI is no longer supported.
 
 ## Install
 
@@ -35,11 +35,13 @@ screen-word setup --key alt-o
 1. It links herdr-app's `mods/screen-word` folder to the installed mod, in `~/.config/herdr-app` or `$HERDR_APP_HOME`.
 2. It adds `"<key>": "mod.open:screen-word"` to the `terminal` section of herdr-app's `keys.json`.
 
-herdr-app reloads both at once, so the key works without a restart. Start herdr-app at least once before running setup, so that `keys.json` exists. Setup refuses a key that is already bound to something else. Running it again leaves an existing binding alone.
+herdr-app reloads both at once, so the key works without a restart. Start herdr-app at least once before running setup, so that `keys.json` exists. jq rewrites `keys.json` with 2-space indentation; the other bindings stay as they were.
 
-`setup` picks the chord the OS can deliver by default: Cmd+; on macOS, where Option would type `…` on many keyboard layouts, and Alt+; on Linux, which has no Cmd key. Pass `--key` to choose another chord, in herdr-app's spelling (`ctrl-shift-y`). `alt+;` is accepted too.
+Setup refuses a key that is already bound in the `terminal` or `global` section, and refuses to replace a `mods/screen-word` folder that is not a link. Running it again leaves an existing binding alone.
 
-If you used an earlier version with the `herdr` multiplexer, `setup` also removes the old binding from `~/.config/herdr/config.toml`.
+`setup` picks the chord the OS can deliver by default: Cmd+; on macOS, and Alt+; on Linux, which has no Cmd key. On macOS, herdr-app types `…` for Option+; on keyboard layouts other than US, US International and ABC, unless its `option_as_alt` setting says otherwise. Pass `--key` to choose another chord, in herdr-app's spelling (`ctrl-shift-y`). `alt+;` is accepted too.
+
+If you used an earlier version with the herdr TUI, `setup` also removes the old binding from `~/.config/herdr/config.toml`.
 
 ### Uninstall
 
@@ -50,7 +52,7 @@ screen-word uninstall
 brew uninstall screen-word-autocomplete
 ```
 
-This removes the `mod.open:screen-word` entry from `keys.json` and the `mods/screen-word` link, and leaves the rest of `keys.json` as it was. If you uninstalled with brew first, delete that entry and the dangling link by hand. `screen-word doctor` reports both.
+This removes the `mod.open:screen-word` entry from `keys.json`, the `mods/screen-word` link and any old herdr TUI binding, and leaves the other bindings as they were. If you uninstalled with brew first, delete that entry and the dangling link by hand. `screen-word doctor` reports both.
 
 ## Using it
 
@@ -58,23 +60,23 @@ Press the key while a terminal has focus. A popup lists every word on that termi
 
 | Key | What it does |
 |---|---|
-| Typing | Filter. Prefix matches first, then substring, then scattered letters. Lowercase ignores case. |
+| Typing | Filter. Prefix matches first, then substring, then scattered letters. A lowercase filter ignores case; one with a capital letter matches case exactly. |
 | ↑ ↓, Ctrl+N Ctrl+P, Ctrl+J Ctrl+K | Move the selection. |
 | Enter | Insert the selected word. |
 | Ctrl+S | Include the last 1000 lines of scrollback, or go back to the screen only. |
 | Esc | Close without inserting. |
 
-Words are split on whitespace. Surrounding quotes and brackets, and trailing punctuation such as `,` `:` `.`, are trimmed. Words shorter than 3 characters are dropped, and each word is listed once.
+Words are split on whitespace. Surrounding quotes and brackets, and trailing punctuation such as `,` `:` `.`, are trimmed. Words shorter than 3 characters are dropped, and each word is listed once. The list shows the first 300 matches; type to narrow it.
 
-herdr-app has no command that types text into a terminal, so the mod copies the word to the clipboard, runs herdr-app's paste, then puts your previous clipboard text back. Programs see a normal paste. A clipboard that held something other than text, such as an image, is left holding the word.
+herdr-app has no command that types text into a terminal, so the mod copies the word to the clipboard, runs herdr-app's paste, then puts your previous clipboard text back. Programs see a normal paste. A clipboard that was empty or held something other than text, such as an image, is left holding the word.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `screen-word setup [--key K]` | Link the mod and bind it: Cmd+; on macOS, Alt+; elsewhere. |
-| `screen-word uninstall` | Remove the binding and the mod link. |
-| `screen-word doctor` | Check the binding, the mod (with `herdr-app check`), `hc`, the clipboard tool, and any leftover `herdr` binding. |
+| `screen-word setup [--key K]` | Link the mod and bind it: Cmd+; on macOS, Alt+; elsewhere. Remove any old herdr TUI binding. |
+| `screen-word uninstall` | Remove the binding, the mod link and any old herdr TUI binding. |
+| `screen-word doctor` | Check the binding, the mod (with `herdr-app check`), `hc`, a clipboard tool, and any old herdr TUI binding. |
 
 ## Develop
 
@@ -84,14 +86,16 @@ node --test test/*.test.mjs
 herdr-app check mod
 ```
 
-To try changes in the running app, link the checkout instead of the brew copy: `screen-word uninstall`, then `bin/screen-word setup`. herdr-app reloads the mod whenever a file in `mod/` is saved.
+To try changes in the running app, run `bin/screen-word setup` from the checkout. It points the `mods/screen-word` link at `mod/` here and keeps the existing binding. herdr-app reloads the mod whenever a file in `mod/` is saved. Run the brew copy's `screen-word setup` to switch back.
+
+herdr-app writes `gpui-kit.d.ts` and `jsconfig.json` into the mod folder it loads, so `.gitignore` lists them.
 
 `bin/screen-word` sticks to bash 3.2 and awk features shared by BWK awk (macOS), gawk, mawk and busybox awk. The mod is plain JavaScript for herdr-app: `mod/words.js` has no herdr imports, so node can test it.
 
 ## Release
 
-1. Set `VERSION` in `bin/screen-word`, commit, then tag and push: `git tag -a v0.4.0 -m v0.4.0 && git push origin main v0.4.0`.
+1. Set `VERSION` in `bin/screen-word`, commit, then tag and push: `git tag -a v1.0.0 -m v1.0.0 && git push origin main v1.0.0`.
 2. Get the tarball checksum:
-   `curl -fsSL https://github.com/hobo05/herdr-screen-word-autocomplete/archive/refs/tags/v0.4.0.tar.gz | shasum -a 256`
+   `curl -fsSL https://github.com/hobo05/herdr-screen-word-autocomplete/archive/refs/tags/v1.0.0.tar.gz | shasum -a 256`
 3. Update `url` and `sha256` in `Formula/screen-word-autocomplete.rb`, commit and push.
 4. Check it: `brew update && brew upgrade screen-word-autocomplete && brew test screen-word-autocomplete`.
