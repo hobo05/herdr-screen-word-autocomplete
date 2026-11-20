@@ -1,32 +1,27 @@
 #!/usr/bin/env bash
-# screen-word: pick a word from a herdr pane's recent output with fzf and insert it.
+# screen-word: install the herdr-app mod that picks a word from a terminal's output and inserts it.
 # Kept to bash 3.2 and BSD/GNU-common tools so it runs unchanged on macOS and Linux.
 set -euo pipefail
 
-VERSION="0.7.0"
+VERSION="1.0.0"
+MOD_NAME="screen-word"
+ACTION="mod.open:$MOD_NAME"
 
 usage() {
   cat <<'EOF'
 Usage: screen-word <command> [options]
 
 Commands:
-  setup [--key K]       Add a popup keybinding (default cmd+; on macOS, alt+; elsewhere)
-                        to herdr's config.toml and reload it.
-  uninstall             Remove that keybinding. Run it before brew uninstall.
-  doctor                Check that the keybinding still points at an installed screen-word.
-  popup                 Pick a word from the pane under a herdr popup and type it into that pane.
-                        The keybinding runs this.
-  pick [--pane ID]      Pick a word with fzf and print it.
-  words [--pane ID]     Print the candidate words, newest first.
-  words --stdin         Read the text from stdin instead of a pane.
+  setup [--key K]       Install the herdr-app mod and bind it in keys.json
+                        (default cmd-; on macOS, alt-; elsewhere).
+  uninstall             Remove the binding and the mod. Run it before brew uninstall.
+  doctor                Check the binding, the mod and the tools it needs.
 
 Options:
-  --lines N             Read the last N lines of output, including scrollback, instead of only
-                        what is visible in the pane.
   -h, --help            Show this help.
   -V, --version         Show the version.
 
-The pane defaults to $HERDR_ACTIVE_PANE_ID, then $HERDR_PANE_ID.
+herdr-app's folder is $HERDR_APP_HOME, else ~/.config/herdr-app.
 EOF
 }
 
@@ -35,148 +30,61 @@ die() {
   exit 1
 }
 
-# macOS keyboards have Option, not Alt, and terminals compose Option+; into "…" unless
-# configured to send Alt. Cmd+; is unbound in Ghostty, iTerm2 and Terminal.app, so it is
-# the default there. Elsewhere there is no Cmd, and Alt+; reaches herdr as ESC+;.
 default_key() {
   case "$(uname -s 2>/dev/null)" in
-    Darwin) printf '%s\n' 'cmd+;' ;;
-    *) printf '%s\n' 'alt+;' ;;
+    Darwin) printf '%s\n' 'cmd-;' ;;
+    *) printf '%s\n' 'alt-;' ;;
   esac
 }
 
-resolve_pane() {
-  local pane="${1:-${HERDR_ACTIVE_PANE_ID:-${HERDR_PANE_ID:-}}}"
-  [ -n "$pane" ] || die "no herdr pane: run inside herdr or pass --pane ID"
-  printf '%s\n' "$pane"
+normalize_key() {
+  printf '%s\n' "$1" | sed 's/+\([^+]\)/-\1/g'
 }
 
-# Reads what is visible in the pane, or the last N lines including scrollback when N is given.
-read_pane() {
-  command -v herdr >/dev/null 2>&1 || die "herdr is not on PATH"
-  if [ -n "$2" ]; then
-    herdr pane read "$1" --source recent-unwrapped --lines "$2"
-  else
-    herdr pane read "$1" --source visible
-  fi
+app_home() {
+  printf '%s\n' "${HERDR_APP_HOME:-$HOME/.config/herdr-app}"
 }
 
-# Splits text into words, trims surrounding quotes, brackets and trailing punctuation,
-# and prints each word of 3+ characters once, newest first.
-extract_words() {
-  awk '
-    BEGIN { lead = "\"'\''`([{<"; trail = "\"'\''`)]}>,;:.!?" }
-    { lines[NR] = $0 }
-    END {
-      for (i = NR; i > 0; i--) {
-        n = split(lines[i], parts, /[ \t\r]+/)
-        for (j = n; j > 0; j--) {
-          w = parts[j]
-          while (w != "" && index(lead, substr(w, 1, 1))) w = substr(w, 2)
-          while (w != "" && index(trail, substr(w, length(w), 1))) w = substr(w, 1, length(w) - 1)
-          if (length(w) > 2 && !(w in seen)) { seen[w] = 1; print w }
-        }
-      }
-    }'
+keys_file() {
+  printf '%s/keys.json\n' "$(app_home)"
 }
 
-choose() {
-  command -v fzf >/dev/null 2>&1 || die "fzf is not on PATH"
-  fzf --prompt 'screen> ' "$@"
+mod_link() {
+  printf '%s/mods/%s\n' "$(app_home)" "$MOD_NAME"
 }
 
-parse_common() {
-  PANE=""
-  LINES_TO_READ=""
-  STDIN=0
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --pane) [ $# -ge 2 ] || die "--pane needs a value"; PANE="$2"; shift 2 ;;
-      --lines) [ $# -ge 2 ] || die "--lines needs a value"; LINES_TO_READ="$2"; shift 2 ;;
-      --stdin) STDIN=1; shift ;;
-      *) die "unknown option: $1" ;;
-    esac
-  done
-  case "$LINES_TO_READ" in *[!0-9]*) die "--lines must be a number" ;; esac
-}
-
-source_text() {
-  if [ "$STDIN" = 1 ]; then
-    cat
-  else
-    read_pane "$(resolve_pane "$PANE")" "$LINES_TO_READ"
-  fi
-}
-
-cmd_words() {
-  parse_common "$@"
-  source_text | extract_words
-}
-
-cmd_pick() {
-  parse_common "$@"
-  source_text | extract_words | choose --height 40%
-}
-
-cmd_popup() {
-  parse_common "$@"
-  local pane word
-  pane="$(resolve_pane "${PANE:-${HERDR_ACTIVE_PANE_ID:-}}")"
-  word="$(read_pane "$pane" "$LINES_TO_READ" | extract_words | choose)" || exit 0
-  [ -n "$word" ] && herdr pane send-text "$pane" "$word" >/dev/null
-}
-
-herdr_config_path() {
+legacy_herdr_config() {
   printf '%s\n' "${HERDR_CONFIG_PATH:-$HOME/.config/herdr/config.toml}"
 }
 
-reload_herdr() {
-  if command -v herdr >/dev/null 2>&1 && herdr config check >/dev/null 2>&1; then
-    herdr server reload-config >/dev/null 2>&1 && echo "Reloaded the running herdr server." || true
-  fi
+script_dir() {
+  cd "$(dirname "$0")" && pwd
 }
 
-cmd_setup() {
-  local key config self
-  key="$(default_key)"
-  [ "${1:-}" != "herdr" ] || shift
-  while [ $# -gt 0 ]; do
-    case "$1" in
-      --key) [ $# -ge 2 ] || die "--key needs a value"; key="$2"; shift 2 ;;
-      *) die "usage: screen-word setup [--key KEY]" ;;
-    esac
+mod_source() {
+  local root dir
+  root="$(dirname "$(script_dir)")"
+  for dir in "$root/share/screen-word-autocomplete/mod" "$root/mod"; do
+    if [ -f "$dir/main.js" ]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
   done
-  config="$(herdr_config_path)"
-  # The path as invoked, not the symlink target, so a brew upgrade (new Cellar dir) keeps the binding working.
-  self="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
-  if [ -f "$config" ] && grep -q 'screen-word' "$config"; then
-    echo "screen-word is already bound in $config; edit that block to change it."
-    return 0
-  fi
-  mkdir -p "$(dirname "$config")"
-  cat >>"$config" <<EOF
-
-# >>> screen-word >>>
-[[keys.command]]
-key = "$key"
-type = "popup"
-command = "$self popup"
-description = "insert a word from this pane's output"
-width = "60%"
-height = "50%"
-# <<< screen-word <<<
-EOF
-  echo "Added $key to $config"
-  reload_herdr
+  return 1
 }
 
-# Rewrites a file in place through its path, so a symlinked config keeps pointing at its target.
-# Leaves the file alone and returns 1 when the filter changed nothing.
+require_jq() {
+  command -v jq >/dev/null 2>&1 || die "jq is not on PATH"
+}
+
 rewrite_file() {
   local file="$1" tmp
   shift
   tmp="$(mktemp)"
-  "$@" <"$file" >"$tmp"
+  if ! "$@" <"$file" >"$tmp"; then
+    rm -f "$tmp"
+    die "could not update $file"
+  fi
   if cmp -s "$file" "$tmp"; then
     rm -f "$tmp"
     return 1
@@ -185,9 +93,29 @@ rewrite_file() {
   rm -f "$tmp"
 }
 
-# Drops marked screen-word blocks and, for configs written by older versions, any
-# [[keys.command]] table that mentions screen-word, with the blank lines before it.
-strip_herdr_block() {
+bound_keys() {
+  jq -r --arg action "$ACTION" \
+    'to_entries[] | select(.value | type == "object") | .key as $section
+     | .value | to_entries[] | select(.value == $action) | "\($section)\t\(.key)"' "$1"
+}
+
+key_owner() {
+  jq -r --arg key "$2" \
+    '[.terminal[$key], .global[$key]] | map(select(. != null)) | first // empty
+     | if type == "string" then . else tojson end' "$1"
+}
+
+add_binding() {
+  jq --indent 2 --arg key "$1" --arg action "$ACTION" '.terminal = ((.terminal // {}) + {($key): $action})'
+}
+
+drop_bindings() {
+  jq --indent 2 --arg action "$ACTION" \
+    'with_entries(if (.value | type) == "object"
+                  then .value |= with_entries(select(.value != $action)) else . end)'
+}
+
+strip_legacy_herdr_block() {
   awk '
     /^[ \t]*# >>> screen-word >>>[ \t]*$/ { in_block = 1; pending = ""; next }
     in_block {
@@ -211,89 +139,159 @@ strip_herdr_block() {
     END { cur = cur gap; flush() }'
 }
 
-cmd_uninstall() {
-  [ "${1:-}" != "herdr" ] || shift
-  [ $# -eq 0 ] || die "usage: screen-word uninstall"
+remove_legacy_herdr_binding() {
   local config
-  config="$(herdr_config_path)"
-  if [ ! -f "$config" ] || ! rewrite_file "$config" strip_herdr_block; then
-    echo "No screen-word binding in $config."
-    return 0
+  config="$(legacy_herdr_config)"
+  if [ -f "$config" ] && rewrite_file "$config" strip_legacy_herdr_block; then
+    echo "Removed the old herdr (TUI) binding from $config"
   fi
-  echo "Removed the screen-word binding from $config"
-  reload_herdr
 }
 
-# Prints "key<TAB>command" for every [[keys.command]] table that mentions screen-word.
-binding_report() {
-  awk '
-    function flush() {
-      if (in_cmd && mentions) printf "%s\t%s\n", key, cmdline
-    }
-    function value(line,   s) {
-      s = line
-      sub(/^[^=]*=[ \t]*/, "", s)
-      if (s ~ /^"/) { sub(/^"/, "", s); sub(/"[ \t]*$/, "", s) }
-      return s
-    }
-    /^[ \t]*\[/ {
-      flush()
-      in_cmd = ($0 ~ /^[ \t]*\[\[keys\.command\]\]/)
-      mentions = 0
-      key = ""
-      cmdline = ""
-      next
-    }
-    in_cmd {
-      if ($0 ~ /^[ \t]*key[ \t]*=/) key = value($0)
-      else if ($0 ~ /^[ \t]*command[ \t]*=/) cmdline = value($0)
-      if ($0 ~ /screen-word/) mentions = 1
-    }
-    END { flush() }'
+link_mod() {
+  local source link
+  source="$(mod_source)" || die "cannot find the mod next to $0"
+  link="$(mod_link)"
+  if [ -L "$link" ]; then
+    rm -f "$link"
+  elif [ -e "$link" ]; then
+    die "$link already exists and is not a link; move it away and run setup again"
+  fi
+  mkdir -p "$(dirname "$link")"
+  ln -s "$source" "$link"
+  echo "Linked $link -> $source"
 }
 
-binding_command_exists() {
-  case "$1" in
-    /*) [ -x "$1" ] ;;
-    *) command -v "$1" >/dev/null 2>&1 ;;
-  esac
+cmd_setup() {
+  local key keys bound owner
+  key="$(default_key)"
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --key) [ $# -ge 2 ] || die "--key needs a value"; key="$2"; shift 2 ;;
+      *) die "usage: screen-word setup [--key KEY]" ;;
+    esac
+  done
+  key="$(normalize_key "$key")"
+  require_jq
+  keys="$(keys_file)"
+  [ -f "$keys" ] || die "no $keys: start herdr-app once, then run setup again"
+
+  bound="$(bound_keys "$keys")"
+  if [ -z "$bound" ]; then
+    owner="$(key_owner "$keys" "$key")"
+    [ -z "$owner" ] || die "$key is already bound to $owner in $keys; pick another with --key"
+  fi
+
+  link_mod
+  if [ -n "$bound" ]; then
+    echo "screen-word is already bound in $keys (${bound//$'\t'/ }); edit that entry to change it."
+  else
+    rewrite_file "$keys" add_binding "$key" || true
+    echo "Bound $key to $ACTION in $keys"
+  fi
+  remove_legacy_herdr_binding
+}
+
+cmd_uninstall() {
+  [ $# -eq 0 ] || die "usage: screen-word uninstall"
+  local keys link
+  keys="$(keys_file)"
+  link="$(mod_link)"
+  if [ -f "$keys" ]; then
+    require_jq
+    if rewrite_file "$keys" drop_bindings; then
+      echo "Removed the screen-word binding from $keys"
+    else
+      echo "No screen-word binding in $keys."
+    fi
+  fi
+  if [ -L "$link" ]; then
+    rm -f "$link"
+    echo "Removed $link"
+  elif [ -e "$link" ]; then
+    echo "Left $link in place: it is not the link setup made."
+  fi
+  remove_legacy_herdr_binding
+}
+
+clipboard_tool() {
+  local tool
+  for tool in pbcopy wl-copy xclip xsel; do
+    if command -v "$tool" >/dev/null 2>&1; then
+      printf '%s\n' "$tool"
+      return 0
+    fi
+  done
+  return 1
 }
 
 cmd_doctor() {
   [ $# -eq 0 ] || die "usage: screen-word doctor"
-  local config report count=0 problems=0 path
-  config="$(herdr_config_path)"
-  echo "herdr config: $config"
-  if [ ! -f "$config" ]; then
-    echo "No herdr config, so nothing to check."
-    return 0
-  fi
-  report="$(binding_report <"$config")"
-  if [ -z "$report" ]; then
-    echo "No screen-word binding."
-    return 0
-  fi
-  while IFS=$'\t' read -r key cmdline; do
-    count=$((count + 1))
-    printf 'Binding: key = "%s", command = "%s"\n' "$key" "$cmdline"
-    path="${cmdline%% *}"
-    if [ -z "$path" ] || ! binding_command_exists "$path"; then
-      printf '  missing: %s\n' "${path:-<empty command>}"
+  local keys link problems=0 bound count tool output
+  keys="$(keys_file)"
+  link="$(mod_link)"
+  echo "herdr-app folder: $(app_home)"
+
+  if [ ! -f "$keys" ]; then
+    echo "  missing: $keys (start herdr-app once)"
+    problems=$((problems + 1))
+  elif ! command -v jq >/dev/null 2>&1; then
+    echo "  missing: jq, needed to read $keys"
+    problems=$((problems + 1))
+  else
+    bound="$(bound_keys "$keys")"
+    count=0
+    [ -z "$bound" ] || count="$(printf '%s\n' "$bound" | wc -l | tr -d ' ')"
+    if [ "$count" -eq 0 ]; then
+      echo "  no binding: run screen-word setup"
       problems=$((problems + 1))
+    else
+      printf '%s\n' "$bound" | while IFS=$'\t' read -r section key; do
+        printf 'Binding: "%s" in %s\n' "$key" "$section"
+      done
+      if [ "$count" -gt 1 ]; then
+        echo "  $count bindings found; one is enough"
+        problems=$((problems + 1))
+      fi
     fi
-  done <<EOF
-$report
-EOF
-  if [ "$count" -gt 1 ]; then
-    printf '%d screen-word bindings found; herdr needs only one. Run screen-word uninstall, then screen-word setup.\n' "$count"
+  fi
+  if [ -f "$(app_home)/keys.error" ]; then
+    echo "  herdr-app rejected keys.json: $(cat "$(app_home)/keys.error")"
     problems=$((problems + 1))
   fi
+
+  if [ ! -f "$link/main.js" ]; then
+    echo "  missing: the mod at $link"
+    problems=$((problems + 1))
+  else
+    echo "Mod: $link -> $(cd "$link" && pwd -P)"
+    if command -v herdr-app >/dev/null 2>&1; then
+      if ! output="$(herdr-app check "$link" 2>&1)"; then
+        echo "  herdr-app check failed: $output"
+        problems=$((problems + 1))
+      fi
+    fi
+  fi
+
+  if ! command -v hc >/dev/null 2>&1; then
+    echo "  missing: hc (herdr-core), which reads the terminal"
+    problems=$((problems + 1))
+  fi
+  if tool="$(clipboard_tool)"; then
+    echo "Clipboard: $tool"
+  else
+    echo "  missing: a clipboard tool (wl-clipboard, xclip or xsel)"
+    problems=$((problems + 1))
+  fi
+
+  if [ -f "$(legacy_herdr_config)" ] && grep -q 'screen-word' "$(legacy_herdr_config)"; then
+    echo "  old herdr (TUI) binding in $(legacy_herdr_config): run screen-word setup or uninstall to remove it"
+    problems=$((problems + 1))
+  fi
+
   if [ "$problems" -gt 0 ]; then
-    echo "Run screen-word uninstall to remove the binding, or reinstall screen-word to restore it."
     return 1
   fi
-  echo "The binding is healthy."
-  return 0
+  echo "Everything is in place."
 }
 
 main() {
@@ -304,9 +302,6 @@ main() {
     setup) cmd_setup "$@" ;;
     uninstall) cmd_uninstall "$@" ;;
     doctor) cmd_doctor "$@" ;;
-    popup) cmd_popup "$@" ;;
-    pick) cmd_pick "$@" ;;
-    words) cmd_words "$@" ;;
     -h | --help | help) usage ;;
     -V | --version) echo "screen-word $VERSION" ;;
     *) usage >&2; exit 1 ;;

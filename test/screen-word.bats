@@ -5,248 +5,210 @@ setup() {
   SW="$ROOT/bin/screen-word"
   FAKE_BIN="$BATS_TEST_TMPDIR/bin"
   mkdir -p "$FAKE_BIN"
+  export HERDR_APP_HOME="$BATS_TEST_TMPDIR/herdr-app"
   export HERDR_CONFIG_PATH="$BATS_TEST_TMPDIR/herdr/config.toml"
-  unset HERDR_PANE_ID HERDR_ACTIVE_PANE_ID
+  KEYS="$HERDR_APP_HOME/keys.json"
+  MOD="$HERDR_APP_HOME/mods/screen-word"
+  mkdir -p "$HERDR_APP_HOME"
+  cat >"$KEYS" <<'EOF'
+{
+  "global": {
+    "ctrl-shift-t": "tab.new"
+  },
+  "terminal": {
+    "ctrl-shift-c": "terminal.copy"
+  }
 }
-
-fake_herdr() {
-  cat >"$FAKE_BIN/herdr" <<'EOF'
-#!/usr/bin/env bash
-echo "$*" >>"$BATS_TEST_TMPDIR/herdr.calls"
-case "$1 $2" in
-  "pane read") printf 'old words here\nnewer output line\n' ;;
-esac
 EOF
-  chmod +x "$FAKE_BIN/herdr"
-  PATH="$FAKE_BIN:$PATH"
 }
 
 fake_uname() {
   printf '#!/usr/bin/env bash\nprintf "%%s\\n" "%s"\n' "$1" >"$FAKE_BIN/uname"
   chmod +x "$FAKE_BIN/uname"
+  PATH="$FAKE_BIN:$PATH"
 }
 
-@test "words lists newest first, once each, skipping short words" {
-  run "$SW" words --stdin <<<$'alpha beta ab\ngamma alpha'
+fake_herdr_app() {
+  printf '#!/usr/bin/env bash\necho "$*" >>"$BATS_TEST_TMPDIR/herdr-app.calls"\n' >"$FAKE_BIN/herdr-app"
+  printf '#!/usr/bin/env bash\n' >"$FAKE_BIN/hc"
+  printf '#!/usr/bin/env bash\ncat >/dev/null\n' >"$FAKE_BIN/xclip"
+  chmod +x "$FAKE_BIN/herdr-app" "$FAKE_BIN/hc" "$FAKE_BIN/xclip"
+  PATH="$FAKE_BIN:$PATH"
+}
+
+binding() {
+  jq -r --arg k "$1" '.terminal[$k] // empty' "$KEYS"
+}
+
+@test "setup binds the key in the terminal section and links the mod" {
+  run "$SW" setup --key alt-x
   [ "$status" -eq 0 ]
-  [ "$output" = $'alpha\ngamma\nbeta' ]
+  [ "$(binding alt-x)" = "mod.open:screen-word" ]
+  [ -L "$MOD" ]
+  [ "$(cd "$MOD" && pwd -P)" = "$ROOT/mod" ]
 }
 
-@test "words trims surrounding quotes, brackets and trailing punctuation" {
-  run "$SW" words --stdin <<<$'"quoted" (paren) <angle> path/to/file.java:42: end.'
-  [ "$status" -eq 0 ]
-  [ "$output" = $'end\npath/to/file.java:42\nangle\nparen\nquoted' ]
+@test "setup keeps the other bindings" {
+  "$SW" setup --key alt-x
+  [ "$(jq -r '.global["ctrl-shift-t"]' "$KEYS")" = "tab.new" ]
+  [ "$(binding ctrl-shift-c)" = "terminal.copy" ]
 }
 
-@test "words reads only the visible part of the pane named by HERDR_PANE_ID" {
-  fake_herdr
-  HERDR_PANE_ID=w1:p1 run "$SW" words
-  [ "$status" -eq 0 ]
-  [ "$output" = $'line\noutput\nnewer\nhere\nwords\nold' ]
-  grep -q '^pane read w1:p1 --source visible$' "$BATS_TEST_TMPDIR/herdr.calls"
-}
-
-@test "words --lines reads that many recent lines, including scrollback" {
-  fake_herdr
-  HERDR_PANE_ID=w1:p1 run "$SW" words --lines 500
-  [ "$status" -eq 0 ]
-  grep -q '^pane read w1:p1 --source recent-unwrapped --lines 500$' "$BATS_TEST_TMPDIR/herdr.calls"
-}
-
-@test "words --lines rejects a value that is not a number" {
-  run "$SW" words --lines lots
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"--lines must be a number"* ]]
-}
-
-@test "words without a pane fails with a hint" {
-  run "$SW" words
-  [ "$status" -eq 1 ]
-  [[ "$output" == *"no herdr pane"* ]]
-}
-
-@test "popup types the picked word into the active pane" {
-  fake_herdr
-  cat >"$FAKE_BIN/fzf" <<'EOF'
-#!/usr/bin/env bash
-grep -m1 output
-EOF
-  chmod +x "$FAKE_BIN/fzf"
-  HERDR_ACTIVE_PANE_ID=w1:p2 run "$SW" popup
-  [ "$status" -eq 0 ]
-  grep -q '^pane send-text w1:p2 output$' "$BATS_TEST_TMPDIR/herdr.calls"
-}
-
-@test "popup sends nothing when fzf is cancelled" {
-  fake_herdr
-  printf '#!/usr/bin/env bash\nexit 130\n' >"$FAKE_BIN/fzf"
-  chmod +x "$FAKE_BIN/fzf"
-  HERDR_ACTIVE_PANE_ID=w1:p2 run "$SW" popup
-  [ "$status" -eq 0 ]
-  ! grep -q 'send-text' "$BATS_TEST_TMPDIR/herdr.calls"
-}
-
-@test "setup adds one popup binding and is idempotent" {
-  fake_herdr
+@test "setup accepts herdr's plus spelling of a key" {
   run "$SW" setup --key 'alt+x'
   [ "$status" -eq 0 ]
-  grep -q 'key = "alt+x"' "$HERDR_CONFIG_PATH"
-  grep -q "command = \"$ROOT/bin/screen-word popup\"" "$HERDR_CONFIG_PATH"
-  run "$SW" setup
-  [[ "$output" == *"already bound"* ]]
-  [ "$(grep -c 'keys.command' "$HERDR_CONFIG_PATH")" -eq 1 ]
+  [ "$(binding alt-x)" = "mod.open:screen-word" ]
 }
 
-@test "setup writes a marked block that uninstall can find" {
-  fake_herdr
-  run "$SW" setup --key 'alt+x'
-  [ "$status" -eq 0 ]
-  grep -q '^# >>> screen-word >>>$' "$HERDR_CONFIG_PATH"
-  grep -q '^# <<< screen-word <<<$' "$HERDR_CONFIG_PATH"
-}
-
-@test "setup defaults to cmd+; on macOS" {
-  fake_herdr
+@test "setup defaults to cmd-; on macOS" {
   fake_uname Darwin
   run "$SW" setup
   [ "$status" -eq 0 ]
-  grep -q 'key = "cmd+;"' "$HERDR_CONFIG_PATH"
+  [ "$(binding 'cmd-;')" = "mod.open:screen-word" ]
 }
 
-@test "setup defaults to alt+; elsewhere" {
-  fake_herdr
+@test "setup defaults to alt-; elsewhere" {
   fake_uname Linux
   run "$SW" setup
   [ "$status" -eq 0 ]
-  grep -q 'key = "alt+;"' "$HERDR_CONFIG_PATH"
+  [ "$(binding 'alt-;')" = "mod.open:screen-word" ]
 }
 
-@test "setup still accepts the herdr target from earlier versions" {
-  fake_herdr
-  run "$SW" setup herdr
+@test "setup is idempotent" {
+  "$SW" setup --key alt-x
+  run "$SW" setup --key alt-y
   [ "$status" -eq 0 ]
-  grep -q 'keys.command' "$HERDR_CONFIG_PATH"
+  [[ "$output" == *"already bound"* ]]
+  [ "$(grep -c 'mod.open:screen-word' "$KEYS")" -eq 1 ]
+  [ -L "$MOD" ]
 }
 
-@test "setup rejects a target other than herdr" {
-  run "$SW" setup zsh
+@test "setup refuses a key that is already bound to something else" {
+  run "$SW" setup --key ctrl-shift-t
   [ "$status" -eq 1 ]
-  [[ "$output" == *"usage: screen-word setup"* ]]
-  [ ! -f "$HERDR_CONFIG_PATH" ]
+  [[ "$output" == *"already bound to tab.new"* ]]
+  ! grep -q screen-word "$KEYS"
+  [ ! -e "$MOD" ]
 }
 
-@test "setup binds the symlinked path, not its target" {
-  fake_herdr
-  ln -s "$SW" "$FAKE_BIN/screen-word"
-  run "$FAKE_BIN/screen-word" setup
+@test "setup refuses to replace a mod folder it did not make" {
+  mkdir -p "$MOD"
+  run "$SW" setup --key alt-x
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"is not a link"* ]]
+  ! grep -q screen-word "$KEYS"
+}
+
+@test "setup needs herdr-app to have written keys.json" {
+  rm "$KEYS"
+  run "$SW" setup
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"start herdr-app once"* ]]
+}
+
+@test "setup links the mod installed beside a brew-style bin" {
+  local prefix="$BATS_TEST_TMPDIR/prefix"
+  mkdir -p "$prefix/bin" "$prefix/share/screen-word-autocomplete"
+  cp "$SW" "$prefix/bin/screen-word"
+  cp -R "$ROOT/mod" "$prefix/share/screen-word-autocomplete/mod"
+  run "$prefix/bin/screen-word" setup --key alt-x
   [ "$status" -eq 0 ]
-  grep -q "command = \"$FAKE_BIN/screen-word popup\"" "$HERDR_CONFIG_PATH"
+  [ "$(readlink "$MOD")" = "$prefix/share/screen-word-autocomplete/mod" ]
 }
 
-@test "uninstall restores the config exactly, keeping other bindings" {
-  fake_herdr
+@test "setup removes the old herdr (TUI) binding" {
   mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
   cat >"$HERDR_CONFIG_PATH" <<'EOF'
 onboarding = false
 
-[[keys.command]]
-key = "prefix+g"
-type = "popup"
-command = "lazygit"
-
-[ui.toast]
-delivery = "terminal"
-EOF
-  cp "$HERDR_CONFIG_PATH" "$BATS_TEST_TMPDIR/before.toml"
-  "$SW" setup
-  run "$SW" uninstall
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"Removed the screen-word binding"* ]]
-  cmp "$HERDR_CONFIG_PATH" "$BATS_TEST_TMPDIR/before.toml"
-}
-
-@test "uninstall removes a binding placed between other tables" {
-  mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
-  cat >"$HERDR_CONFIG_PATH" <<'EOF'
+# >>> screen-word >>>
 [[keys.command]]
 key = "alt+;"
 type = "popup"
-command = "/opt/bin/screen-word popup"
-
-[[keys.command]]
-key = "prefix+g"
-command = "lazygit"
+command = "/opt/homebrew/bin/screen-word popup"
+# <<< screen-word <<<
 EOF
-  run "$SW" uninstall
+  run "$SW" setup --key alt-x
   [ "$status" -eq 0 ]
-  ! grep -q 'screen-word' "$HERDR_CONFIG_PATH"
-  grep -q 'lazygit' "$HERDR_CONFIG_PATH"
-  [ "$(grep -c 'keys.command' "$HERDR_CONFIG_PATH")" -eq 1 ]
+  [[ "$output" == *"Removed the old herdr (TUI) binding"* ]]
+  [ "$(cat "$HERDR_CONFIG_PATH")" = "onboarding = false" ]
 }
 
-@test "uninstall keeps a symlinked config a symlink" {
-  mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
-  printf 'onboarding = false\n' >"$BATS_TEST_TMPDIR/real.toml"
-  ln -s "$BATS_TEST_TMPDIR/real.toml" "$HERDR_CONFIG_PATH"
-  "$SW" setup
+@test "uninstall removes the binding and the mod link, keeping other bindings" {
+  "$SW" setup --key alt-x
   run "$SW" uninstall
   [ "$status" -eq 0 ]
-  [ -L "$HERDR_CONFIG_PATH" ]
-  [ "$(cat "$BATS_TEST_TMPDIR/real.toml")" = "onboarding = false" ]
+  [[ "$output" == *"Removed the screen-word binding"* ]]
+  ! grep -q screen-word "$KEYS"
+  [ "$(binding ctrl-shift-c)" = "terminal.copy" ]
+  [ "$(jq -r '.global["ctrl-shift-t"]' "$KEYS")" = "tab.new" ]
+  [ ! -e "$MOD" ]
 }
 
-@test "uninstall is safe to repeat and creates no files when nothing is set up" {
+@test "uninstall removes a binding placed in the global section" {
+  jq '.global["alt-z"] = "mod.open:screen-word"' "$KEYS" >"$KEYS.new" && mv "$KEYS.new" "$KEYS"
+  run "$SW" uninstall
+  [ "$status" -eq 0 ]
+  ! grep -q screen-word "$KEYS"
+}
+
+@test "uninstall keeps a symlinked keys.json a symlink" {
+  mv "$KEYS" "$BATS_TEST_TMPDIR/real-keys.json"
+  ln -s "$BATS_TEST_TMPDIR/real-keys.json" "$KEYS"
+  "$SW" setup --key alt-x
+  run "$SW" uninstall
+  [ "$status" -eq 0 ]
+  [ -L "$KEYS" ]
+  ! grep -q screen-word "$BATS_TEST_TMPDIR/real-keys.json"
+}
+
+@test "uninstall leaves a mod folder it did not make" {
+  mkdir -p "$MOD"
+  run "$SW" uninstall
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"Left $MOD in place"* ]]
+  [ -d "$MOD" ]
+}
+
+@test "uninstall is safe to repeat" {
   run "$SW" uninstall
   [ "$status" -eq 0 ]
   [[ "$output" == *"No screen-word binding"* ]]
-  [ ! -f "$HERDR_CONFIG_PATH" ]
 }
 
-@test "doctor reports a healthy binding" {
-  fake_herdr
-  "$SW" setup --key 'alt+x'
+@test "doctor reports a healthy setup and checks the mod with herdr-app" {
+  fake_herdr_app
+  "$SW" setup --key alt-x
   run "$SW" doctor
   [ "$status" -eq 0 ]
-  [[ "$output" == *'key = "alt+x"'* ]]
-  [[ "$output" == *"The binding is healthy."* ]]
+  [[ "$output" == *'Binding: "alt-x" in terminal'* ]]
+  [[ "$output" == *"Everything is in place."* ]]
+  grep -q "^check $MOD$" "$BATS_TEST_TMPDIR/herdr-app.calls"
 }
 
-@test "doctor flags a binding whose command is gone" {
-  fake_herdr
-  mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
-  cat >"$HERDR_CONFIG_PATH" <<'EOF'
-# >>> screen-word >>>
-[[keys.command]]
-key = "alt+x"
-type = "popup"
-command = "/nonexistent/screen-word popup"
-# <<< screen-word <<<
-EOF
+@test "doctor flags a missing binding and mod" {
+  fake_herdr_app
   run "$SW" doctor
   [ "$status" -eq 1 ]
-  [[ "$output" == *"missing: /nonexistent/screen-word"* ]]
-  [[ "$output" == *"screen-word uninstall"* ]]
+  [[ "$output" == *"no binding"* ]]
+  [[ "$output" == *"missing: the mod"* ]]
 }
 
 @test "doctor flags duplicate bindings" {
-  fake_herdr
-  "$SW" setup --key 'alt+x'
-  cat >>"$HERDR_CONFIG_PATH" <<EOF
-# >>> screen-word >>>
-[[keys.command]]
-key = "alt+y"
-type = "popup"
-command = "$SW popup"
-# <<< screen-word <<<
-EOF
+  fake_herdr_app
+  "$SW" setup --key alt-x
+  jq '.global["alt-z"] = "mod.open:screen-word"' "$KEYS" >"$KEYS.new" && mv "$KEYS.new" "$KEYS"
   run "$SW" doctor
   [ "$status" -eq 1 ]
-  [[ "$output" == *"2 screen-word bindings"* ]]
+  [[ "$output" == *"2 bindings found"* ]]
 }
 
-@test "doctor does not create a config when there is none" {
+@test "doctor flags a leftover herdr (TUI) binding" {
+  fake_herdr_app
+  "$SW" setup --key alt-x
+  mkdir -p "$(dirname "$HERDR_CONFIG_PATH")"
+  printf '[[keys.command]]\nkey = "alt+;"\ncommand = "/x/screen-word popup"\n' >"$HERDR_CONFIG_PATH"
   run "$SW" doctor
-  [ "$status" -eq 0 ]
-  [[ "$output" == *"nothing to check"* ]]
-  [ ! -f "$HERDR_CONFIG_PATH" ]
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"old herdr (TUI) binding"* ]]
 }

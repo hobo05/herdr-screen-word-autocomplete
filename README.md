@@ -1,6 +1,6 @@
 # herdr-screen-word-autocomplete
 
-Press **Cmd+;** on macOS (**Alt+;** on Linux) in a [herdr](https://herdr.dev) pane, fuzzy-pick any word visible in that pane, and have it typed at your cursor. It works at a shell prompt and inside full-screen programs such as Claude Code, vim or less.
+Press **Cmd+;** on macOS (**Alt+;** on Linux) in a [herdr-app](https://herdr.dev) terminal, fuzzy-pick any word visible in that terminal, and have it inserted at your cursor. It works at a shell prompt and inside full-screen programs such as Claude Code, vim or less.
 
 ```
 $ git status
@@ -9,7 +9,7 @@ $ git diff ▮          ← Cmd+; (Alt+; on Linux) → type "Rout" → Enter
 $ git diff src/main/java/com/example/PaymentRouter.java
 ```
 
-Works on macOS and Linux.
+Works on macOS and Linux. It needs herdr-app, the desktop app. The older `herdr` terminal multiplexer is no longer supported.
 
 ## Install
 
@@ -21,67 +21,72 @@ brew install screen-word-autocomplete
 
 Homebrew refuses formulae from third-party taps until you trust them, hence the `brew trust` step. `brew uninstall` also drops the trust, so run `brew trust` again before reinstalling.
 
-This installs the `screen-word` command and pulls in `fzf`. You also need herdr on your `PATH`.
+This installs the `screen-word` command, the herdr-app mod it sets up, and `jq`. herdr-app and its `hc` command must be installed. On Linux you also need a clipboard tool: `wl-clipboard` on Wayland, `xclip` or `xsel` on X11. macOS has `pbcopy` built in.
 
 ## Set up
 
 ```sh
-screen-word setup                  # binds cmd+; on macOS, alt+; on Linux
-screen-word setup --key alt+o
+screen-word setup                  # binds cmd-; on macOS, alt-; on Linux
+screen-word setup --key alt-o
 ```
 
-`setup` picks the chord the OS can deliver by default: Cmd+; on macOS, where Option would compose `…` unless every terminal is configured to send Alt, and Alt+; on Linux, which has no Cmd key. Pass `--key` to choose another chord.
+`setup` does two things:
 
-This adds a popup binding to `~/.config/herdr/config.toml` (or `$HERDR_CONFIG_PATH`) and reloads the running herdr server. The binding is wrapped in `# >>> screen-word >>>` / `# <<< screen-word <<<` comments so it is easy to find and remove by hand. When you press the key, herdr opens a popup with fzf over the words of the pane underneath. Pick one and it is typed into that pane. Running setup again leaves an existing binding alone.
+1. It links herdr-app's `mods/screen-word` folder to the installed mod, in `~/.config/herdr-app` or `$HERDR_APP_HOME`.
+2. It adds `"<key>": "mod.open:screen-word"` to the `terminal` section of herdr-app's `keys.json`.
 
-herdr sees the key before the program in the pane, which is why it works inside Claude Code, vim and other full-screen programs as well as at a shell prompt.
+herdr-app reloads both at once, so the key works without a restart. Start herdr-app at least once before running setup, so that `keys.json` exists. Setup refuses a key that is already bound to something else. Running it again leaves an existing binding alone.
+
+`setup` picks the chord the OS can deliver by default: Cmd+; on macOS, where Option would type `…` on many keyboard layouts, and Alt+; on Linux, which has no Cmd key. Pass `--key` to choose another chord, in herdr-app's spelling (`ctrl-shift-y`). `alt+;` is accepted too.
+
+If you used an earlier version with the `herdr` multiplexer, `setup` also removes the old binding from `~/.config/herdr/config.toml`.
 
 ### Uninstall
 
-`brew uninstall` only removes the files brew installed, not the binding `screen-word setup` added. Remove it first:
+`brew uninstall` only removes the files brew installed, not the binding or the mod link that `screen-word setup` added. Remove them first:
 
 ```sh
 screen-word uninstall
 brew uninstall screen-word-autocomplete
 ```
 
-This removes the binding, reloads herdr, and leaves the rest of the config as it was. If you uninstall with brew first, the key would open a popup that fails, so delete the `[[keys.command]]` block between the `# >>> screen-word >>>` and `# <<< screen-word <<<` comments in herdr's `config.toml`. `screen-word doctor` reports a binding whose command is gone, as well as duplicate bindings.
+This removes the `mod.open:screen-word` entry from `keys.json` and the `mods/screen-word` link, and leaves the rest of `keys.json` as it was. If you uninstalled with brew first, delete that entry and the dangling link by hand. `screen-word doctor` reports both.
 
-### macOS
+## Using it
 
-The default Cmd+; needs no terminal setup.
+Press the key while a terminal has focus. A popup lists every word on that terminal's screen, newest first. Type to filter, then press Enter or click a word to insert it.
 
-Only if you bind Alt+; with `screen-word setup --key alt+;` must your terminal send Option as Alt, or Option+; types `…` instead:
+| Key | What it does |
+|---|---|
+| Typing | Filter. Prefix matches first, then substring, then scattered letters. Lowercase ignores case. |
+| ↑ ↓, Ctrl+N Ctrl+P, Ctrl+J Ctrl+K | Move the selection. |
+| Enter | Insert the selected word. |
+| Ctrl+S | Include the last 1000 lines of scrollback, or go back to the screen only. |
+| Esc | Close without inserting. |
 
-- Ghostty: `macos-option-as-alt = true` (already the default on U.S. Standard and U.S. International layouts)
-- iTerm2: Profiles → Keys → Left Option key → Esc+
-- Terminal.app: Profiles → Keyboard → Use Option as Meta key
+Words are split on whitespace. Surrounding quotes and brackets, and trailing punctuation such as `,` `:` `.`, are trimmed. Words shorter than 3 characters are dropped, and each word is listed once.
+
+herdr-app has no command that types text into a terminal, so the mod copies the word to the clipboard, runs herdr-app's paste, then puts your previous clipboard text back. Programs see a normal paste. A clipboard that held something other than text, such as an image, is left holding the word.
 
 ## Commands
 
 | Command | What it does |
 |---|---|
-| `screen-word setup [--key K]` | Add the popup binding to herdr's config: Cmd+; on macOS, Alt+; elsewhere. |
-| `screen-word uninstall` | Remove the popup binding. |
-| `screen-word doctor` | Report a binding whose command is gone, and duplicate bindings. |
-| `screen-word popup` | Pick from the pane under a herdr popup and type the word into it. Used by the binding. |
-| `screen-word pick [--pane ID]` | Pick a word with fzf and print it. |
-| `screen-word words [--pane ID]` | Print the candidate words, newest first. |
-| `screen-word words --stdin` | Read the text from stdin instead of a pane. |
-
-By default only what is visible in the pane is read, so the picker offers the words you can see. `--lines N` reads the last N lines of output instead, including scrollback. The pane defaults to `$HERDR_ACTIVE_PANE_ID`, then `$HERDR_PANE_ID`.
-
-To use scrollback from the keybinding, add `--lines` to its command in herdr's `config.toml`, for example `command = "/opt/homebrew/bin/screen-word popup --lines 300"`.
-
-Words are split on whitespace. Surrounding quotes and brackets, and trailing punctuation such as `,` `:` `.`, are trimmed. Words shorter than 3 characters are dropped, and each word is listed once.
+| `screen-word setup [--key K]` | Link the mod and bind it: Cmd+; on macOS, Alt+; elsewhere. |
+| `screen-word uninstall` | Remove the binding and the mod link. |
+| `screen-word doctor` | Check the binding, the mod (with `herdr-app check`), `hc`, the clipboard tool, and any leftover `herdr` binding. |
 
 ## Develop
 
 ```sh
 bats test/
+node --test test/*.test.mjs
+herdr-app check mod
 ```
 
-The script sticks to bash 3.2 and awk features shared by BWK awk (macOS), gawk, mawk and busybox awk.
+To try changes in the running app, link the checkout instead of the brew copy: `screen-word uninstall`, then `bin/screen-word setup`. herdr-app reloads the mod whenever a file in `mod/` is saved.
+
+`bin/screen-word` sticks to bash 3.2 and awk features shared by BWK awk (macOS), gawk, mawk and busybox awk. The mod is plain JavaScript for herdr-app: `mod/words.js` has no herdr imports, so node can test it.
 
 ## Release
 
