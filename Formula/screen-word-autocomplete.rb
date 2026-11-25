@@ -1,8 +1,8 @@
 class ScreenWordAutocomplete < Formula
   desc "Pick a word from a herdr-app terminal's output and insert it"
   homepage "https://github.com/hobo05/herdr-screen-word-autocomplete"
-  url "https://github.com/hobo05/herdr-screen-word-autocomplete/archive/refs/tags/v1.0.0.tar.gz"
-  sha256 "6830e4b3dfd99eee4df233c3aaecc166067ea9446ee25d0391e8011de57c5556"
+  url "https://github.com/hobo05/herdr-screen-word-autocomplete/archive/refs/tags/v1.0.1.tar.gz"
+  sha256 "745f48f52ad5cb9d5a8cec7b5d8611d0d2b5bae87ca2fcd87bb7726af1ec4929"
   license "MIT"
   head "https://github.com/hobo05/herdr-screen-word-autocomplete.git", branch: "main"
 
