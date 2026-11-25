@@ -3,7 +3,7 @@
 # Kept to bash 3.2 and BSD/GNU-common tools so it runs unchanged on macOS and Linux.
 set -euo pipefail
 
-VERSION="1.0.0"
+VERSION="1.0.1"
 MOD_NAME="screen-word"
 ACTION="mod.open:$MOD_NAME"
 

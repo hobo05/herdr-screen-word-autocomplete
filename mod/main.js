@@ -2,6 +2,7 @@ import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, ScrollHandle } from "gpui-base";
 import { hc, run, focused, props, closeOverlay, notify, theme, settings } from "herdr";
 import { extractWordsNewestFirst, filterWords } from "./words.js";
+import { terminalOnScreen } from "./focus.js";
 import { clipboardTextOrNull, copiedToClipboard } from "./clipboard.js";
 
 const SCROLLBACK_LINES = 1000;
@@ -13,7 +14,7 @@ const PASTE_SETTLE_MS = 300;
 
 export default class ScreenWord extends View {
   init(_props, cx) {
-    this.terminal = focused()?.terminal ?? null;
+    this.terminal = terminalOnScreen(focused());
     this.words = [];
     this.query = "";
     this.at = 0;

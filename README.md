@@ -56,7 +56,7 @@ This removes the `mod.open:screen-word` entry from `keys.json`, the `mods/screen
 
 ## Using it
 
-Press the key while a terminal has focus. A popup lists every word on that terminal's screen, newest first. Type to filter, then press Enter or click a word to insert it.
+Press the key while a terminal has focus. A popup lists every word on that terminal's screen, newest first. When the pane shows another terminal in place of its own (`terminal.show`), the words come from the terminal it shows. Type to filter, then press Enter or click a word to insert it.
 
 | Key | What it does |
 |---|---|
@@ -90,7 +90,7 @@ To try changes in the running app, run `bin/screen-word setup` from the checkout
 
 herdr-app writes `gpui-kit.d.ts` and `jsconfig.json` into the mod folder it loads, so `.gitignore` lists them.
 
-`bin/screen-word` sticks to bash 3.2 and awk features shared by BWK awk (macOS), gawk, mawk and busybox awk. The mod is plain JavaScript for herdr-app: `mod/words.js` has no herdr imports, so node can test it.
+`bin/screen-word` sticks to bash 3.2 and awk features shared by BWK awk (macOS), gawk, mawk and busybox awk. The mod is plain JavaScript for herdr-app: `mod/words.js` and `mod/focus.js` have no herdr imports, so node can test them.
 
 ## Release
 
